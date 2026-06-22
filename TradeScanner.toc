@@ -1,0 +1,10 @@
+## Interface: 11503
+## Title: TradeScanner
+## Notes: Scanner de canal de commerce avec intégration métiers. /ts pour ouvrir.
+## Author:
+## Version: 1.0
+## SavedVariables: TradeScannerDB, TradeScannerLog
+
+TradeScanner.lua
+TradeScanner_Minimap.lua
+TradeScanner_UI.lua
