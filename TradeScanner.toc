@@ -2,9 +2,14 @@
 ## Title: TradeScanner
 ## Notes: Scanner de canal de commerce avec intégration métiers. /ts pour ouvrir.
 ## Author:
-## Version: 1.0
+## Version: 1.1
 ## SavedVariables: TradeScannerDB, TradeScannerLog
 
 TradeScanner.lua
+TradeScanner_Data.lua
+Data\Professions\Enchanting.lua
+Data\Professions\Cooking.lua
 TradeScanner_Minimap.lua
 TradeScanner_UI.lua
+TradeScanner_ProfPanel.lua
+TradeScanner_Network.lua

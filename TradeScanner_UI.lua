@@ -19,14 +19,14 @@ local COLUMNS = {
     { label = "Price",  w = 88,  x = 275 },
     { label = "Player", w = 115, x = 367 },
     { label = "Age",    w = 34,  x = 486 },
-    { label = "Craft",  w = 120, x = 524 },
+    { label = "Provide", w = 120, x = 524 },
 }
 
 local TABS = {
     { id = "all",      label = "All"          },
-    { id = "sell",     label = "Sales (WTS)"  },
+    { id = "wts",      label = "Sales (WTS)"  },
     { id = "buy",      label = "Wanted (WTB)" },
-    { id = "craft",    label = "Craftable"    },
+    { id = "sell",     label = "Sellable"     },
 }
 
 -- ============================================================
@@ -102,6 +102,25 @@ function UI:Build()
     closeBtn:SetPoint("TOPRIGHT", -2, -2)
     closeBtn:SetScript("OnClick", function() f:Hide() end)
 
+    -- Champ de recherche (filtre par nom d'item / joueur, toutes langues)
+    local searchLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    searchLabel:SetPoint("TOPRIGHT", -180, -14)
+    searchLabel:SetText("|cFFAAAAAAFilter|r")
+
+    local searchBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
+    searchBox:SetSize(120, 18)
+    searchBox:SetPoint("TOPRIGHT", -36, -10)
+    searchBox:SetAutoFocus(false)
+    searchBox:SetScript("OnTextChanged", function(box)
+        UI.searchText = box:GetText()
+        UI:Refresh()
+    end)
+    searchBox:SetScript("OnEscapePressed", function(box)
+        box:SetText("")
+        box:ClearFocus()
+    end)
+    self.searchBox = searchBox
+
     -- ---- ONGLETS ----
     self.tabBtns = {}
     for i, tabDef in ipairs(TABS) do
@@ -127,7 +146,7 @@ function UI:Build()
         "ScrollFrame", "TradeScannerScroll", f, "UIPanelScrollFrameTemplate"
     )
     scrollFrame:SetPoint("TOPLEFT",     4,  -96)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -26, 36)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -26, 62)
 
     local content = CreateFrame("Frame", nil, scrollFrame)
     content:SetWidth(FRAME_W - 32)
@@ -143,23 +162,93 @@ function UI:Build()
         self.rows[i] = self:BuildRow(content, i)
     end
 
+    MakeSeparator(f, -(FRAME_H - 60))
+
     -- ---- BARRE DE STATUT ----
     local statusText = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    statusText:SetPoint("BOTTOMLEFT", 8, 10)
+    statusText:SetPoint("BOTTOMLEFT", 8, 36)
     statusText:SetTextColor(0.55, 0.55, 0.55)
     self.statusText = statusText
+
+    -- ---- GESTION DU VENDABLE MANUEL (dropdown + ajout) ----
+    local sellLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    sellLabel:SetPoint("BOTTOMLEFT", 8, 11)
+    sellLabel:SetText("|cFF88FF88Sell+|r")
+
+    -- EditBox: accepte le shift-clic d'un objet (insère le lien) ou un itemID
+    local addBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
+    addBox:SetSize(180, 18)
+    addBox:SetPoint("BOTTOMLEFT", 52, 10)
+    addBox:SetAutoFocus(false)
+    addBox:SetScript("OnEscapePressed", function(box) box:SetText(""); box:ClearFocus() end)
+    self.addBox = addBox
+
+    local function DoAddSellable()
+        local txt = addBox:GetText() or ""
+        local itemID = tonumber(txt:match("|Hitem:(%d+)")) or tonumber(txt:match("^%s*(%d+)%s*$"))
+        if itemID then
+            TS:AddManualSellable(itemID)
+            addBox:SetText("")
+            addBox:ClearFocus()
+            UI:Refresh()
+            print("|cFF00CCFFTradeScanner|r Vendable +: " .. TS:GetItemName(itemID))
+        else
+            print("|cFF00CCFFTradeScanner|r Shift-clic un objet dans le champ, ou tape un itemID.")
+        end
+    end
+    addBox:SetScript("OnEnterPressed", DoAddSellable)
+
+    local addBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    addBtn:SetSize(50, 22)
+    addBtn:SetPoint("LEFT", addBox, "RIGHT", 4, 0)
+    addBtn:SetText("Add")
+    addBtn:SetScript("OnClick", DoAddSellable)
+
+    -- Dropdown "Manage": liste les items vendables manuels, retire au clic
+    local manageDrop = CreateFrame("Frame", "TradeScannerManageDrop", f, "UIDropDownMenuTemplate")
+    manageDrop:SetPoint("LEFT", addBtn, "RIGHT", -6, -2)
+    UIDropDownMenu_SetWidth(manageDrop, 90)
+    UIDropDownMenu_SetText(manageDrop, "Manage")
+    UIDropDownMenu_Initialize(manageDrop, function(_, level)
+        local info = UIDropDownMenu_CreateInfo()
+        info.isTitle = true
+        info.text = "Vendable manuel (clic = retirer)"
+        info.notCheckable = true
+        UIDropDownMenu_AddButton(info, level)
+        local any = false
+        for itemID in pairs(TS.db.manualSellable or {}) do
+            any = true
+            local info2 = UIDropDownMenu_CreateInfo()
+            info2.text = TS:GetItemName(itemID)
+            info2.notCheckable = true
+            info2.func = function()
+                TS:RemoveManualSellable(itemID)
+                UI:Refresh()
+                CloseDropDownMenus()
+            end
+            UIDropDownMenu_AddButton(info2, level)
+        end
+        if not any then
+            local info3 = UIDropDownMenu_CreateInfo()
+            info3.text = "|cFF888888(vide)|r"
+            info3.notCheckable = true
+            info3.disabled = true
+            UIDropDownMenu_AddButton(info3, level)
+        end
+    end)
+    self.manageDrop = manageDrop
 
     -- Refresh button
     local refreshBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     refreshBtn:SetSize(90, 22)
-    refreshBtn:SetPoint("BOTTOMRIGHT", -28, 6)
+    refreshBtn:SetPoint("BOTTOMRIGHT", -28, 8)
     refreshBtn:SetText("Refresh")
     refreshBtn:SetScript("OnClick", function() UI:Refresh() end)
 
     -- Clear button
     local clearBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     clearBtn:SetSize(70, 22)
-    clearBtn:SetPoint("BOTTOMRIGHT", -122, 6)
+    clearBtn:SetPoint("BOTTOMRIGHT", -122, 8)
     clearBtn:SetText("Clear")
     clearBtn:SetScript("OnClick", function()
         TS.db.offers = {}
@@ -229,8 +318,8 @@ function UI:SetTab(tabID)
             btn.txt:SetTextColor(0.7, 0.7, 0.7)
         end
     end
-    -- L'utilisateur consulte les demandes craftables : on efface l'alerte minimap
-    if tabID == "craft" and TS.Minimap then
+    -- L'utilisateur consulte les demandes qu'il peut fournir : on efface l'alerte minimap
+    if tabID == "sell" and TS.Minimap then
         TS.Minimap:SetAlert(false)
     end
     self:Refresh()
@@ -315,6 +404,22 @@ function UI:BuildRow(parent, index)
     craftFS:SetTextColor(1, 0.78, 0)
     row.craftFS = craftFS
 
+    -- Bouton "Done" (marquer comme traité) — icône simple ✓, pas de tooltip
+    local doneBtn = CreateFrame("Button", nil, row)
+    doneBtn:SetSize(16, 16)
+    doneBtn:SetPoint("RIGHT", -26, 0)
+    local doneIcon = doneBtn:CreateTexture(nil, "ARTWORK")
+    doneIcon:SetAllPoints()
+    doneIcon:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+    doneBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    doneBtn:SetScript("OnClick", function()
+        if row.offer and row.offer.player and row.offer.itemID then
+            TS:MarkDone(row.offer.player, row.offer.itemID, false)
+        end
+    end)
+    doneBtn:Hide()
+    row.doneBtn = doneBtn
+
     -- Bouton whisper (icône lettre)
     local wBtn = CreateFrame("Button", nil, row)
     wBtn:SetSize(16, 16)
@@ -373,11 +478,13 @@ function UI:BuildRow(parent, index)
 
         GameTooltip:AddLine("|cFF888888Left-click to whisper|r")
         GameTooltip:Show()
-        r.wBtn:Show()
+        if r.doneBtn then r.doneBtn:Show() end
+        if r.wBtn then r.wBtn:Show() end
     end)
 
     row:SetScript("OnLeave", function(r)
         GameTooltip:Hide()
+        if r.doneBtn then r.doneBtn:Hide() end
         if r.wBtn then r.wBtn:Hide() end
     end)
 
@@ -406,15 +513,32 @@ function UI:Refresh()
     local offers
 
     if tab == "all"   then offers = TS:GetOffers(nil,    false)
-    elseif tab == "sell"  then offers = TS:GetOffers("sell", false)
+    elseif tab == "wts"   then offers = TS:GetOffers("sell", false)
     elseif tab == "buy"   then offers = TS:GetOffers("buy",  false)
-    elseif tab == "craft" then offers = TS:GetOffers("buy",  true)   -- WTB qu'on peut crafter
+    elseif tab == "sell"  then offers = TS:GetSellableOffers()       -- WTB qu'on peut fournir
+    end
+
+    -- Filtre de recherche (par nom d'item, toutes langues via le texte affiché)
+    if self.searchText and self.searchText ~= "" then
+        local needle = self.searchText:lower()
+        local filtered = {}
+        for _, offer in ipairs(offers) do
+            local label = (offer.itemID and TS:GetItemName(offer.itemID, offer.itemName))
+                          or offer.itemName or offer.rawMsg or ""
+            if label:lower():find(needle, 1, true)
+               or (offer.player and offer.player:lower():find(needle, 1, true)) then
+                table.insert(filtered, offer)
+            end
+        end
+        offers = filtered
     end
 
     -- Masquer toutes les lignes
     for _, row in ipairs(self.rows) do
         row:Hide()
         row.offer = nil
+        if row.doneBtn then row.doneBtn:Hide() end
+        if row.wBtn then row.wBtn:Hide() end
     end
 
     local count = math.min(#offers, #self.rows)
@@ -443,9 +567,13 @@ function UI:Refresh()
             row.itemFS:SetText("|cFF888888" .. raw .. "|r")
         end
 
-        -- Prix
+        -- Prix (+ quantité/unité si détectée : "60s /stack", "11g x5", …)
         if offer.priceText then
-            row.priceFS:SetText(offer.priceText)
+            local px = offer.priceText
+            if offer.qtyText then px = px .. " |cFF888888" .. offer.qtyText .. "|r" end
+            row.priceFS:SetText(px)
+        elseif offer.qtyText then
+            row.priceFS:SetText("|cFF888888" .. offer.qtyText .. "|r")
         else
             row.priceFS:SetText("|cFF555555—|r")
         end
@@ -456,10 +584,19 @@ function UI:Refresh()
         -- Âge
         row.ageFS:SetText(FormatAge(offer.timestamp))
 
-        -- Craft highlight
+        -- Surlignage "fournissable" + catégorie
         if offer.canCraft then
             row.craftBar:Show()
-            row.craftFS:SetText(offer.profession or "")
+            if offer.sellCategory == "disenchant" then
+                row.craftBar:SetColorTexture(0.4, 0.8, 1, 1)  -- cyan = désenchantement
+                row.craftFS:SetText("|cFF66CCFFDE|r " .. (offer.profession or ""))
+            elseif offer.sellCategory == "manual" then
+                row.craftBar:SetColorTexture(0.6, 1, 0.6, 1)  -- vert = manuel
+                row.craftFS:SetText("|cFF88FF88" .. (offer.profession or "Manuel") .. "|r")
+            else
+                row.craftBar:SetColorTexture(1, 0.78, 0, 1)   -- or = craft
+                row.craftFS:SetText(offer.profession or "")
+            end
         else
             row.craftBar:Hide()
             row.craftFS:SetText("")
@@ -469,19 +606,19 @@ function UI:Refresh()
         row:Show()
     end
 
-    -- Barre de statut + label onglet Craftable
-    local totalAll   = #TS:GetOffers(nil,   false)
-    local totalCraft = #TS:GetOffers("buy",  true)
+    -- Barre de statut + label onglet Sellable
+    local totalAll   = #TS:GetOffers(nil, false)
+    local totalSell  = #TS:GetSellableOffers()
     local profCount  = 0
     for _ in pairs(TS:GetCraftedProfessions()) do profCount = profCount + 1 end
 
-    -- Met à jour le label de l'onglet Craftable avec le compteur
-    if self.tabBtns and self.tabBtns["craft"] then
-        local btn = self.tabBtns["craft"]
-        if totalCraft > 0 then
-            btn.txt:SetText(string.format("|cFFFFCC00Craftable (%d)|r", totalCraft))
+    -- Met à jour le label de l'onglet Sellable avec le compteur
+    if self.tabBtns and self.tabBtns["sell"] then
+        local btn = self.tabBtns["sell"]
+        if totalSell > 0 then
+            btn.txt:SetText(string.format("|cFFFFCC00Sellable (%d)|r", totalSell))
         else
-            btn.txt:SetText("Craftable")
+            btn.txt:SetText("Sellable")
         end
     end
 
@@ -489,8 +626,8 @@ function UI:Refresh()
         local guildState = (TS.db and TS.db.scanGuild)
             and "|cFF33DD33/g ON|r" or "|cFFFF4444/g OFF|r"
         self.statusText:SetText(string.format(
-            "%d offers  |  |cFFFFCC00%d WTB craftable|r  |  Channel: |cFF00CCFF%s|r  |  %s  |  %d profession(s)",
-            totalAll, totalCraft, TS.db and TS.db.channel or "?", guildState, profCount
+            "%d offers  |  |cFFFFCC00%d WTB sellable|r  |  Channel: |cFF00CCFF%s|r  |  %s  |  %d profession(s)",
+            totalAll, totalSell, TS.db and TS.db.channel or "?", guildState, profCount
         ))
     end
 

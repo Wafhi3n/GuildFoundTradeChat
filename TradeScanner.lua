@@ -14,9 +14,15 @@ local MAX_OFFERS    = 300
 local DEFAULTS = {
     channel  = "freshtrade",
     keywords = {
-        sell = { "WTS", "VDS", "S>", "VEND", "SELL" },
-        buy  = { "WTB", "ACH", "B>", "ACHAT", "BUY", "CHERCHE", "ISO" },
+        sell = { "WTS", "VDS", "S>", "VEND", "SELL", "LFW" },          -- LFW = looking for work (services)
+        buy  = { "WTB", "ACH", "B>", "ACHAT", "BUY", "CHERCHE", "ISO", "WTT", "TROC" },  -- WTT/TROC = troc → traité comme demande
     },
+}
+
+-- Mots-clés ajoutés après coup : à ré-injecter dans les DB existantes (cf. migration Init).
+local KEYWORD_MIGRATIONS = {
+    sell = { "LFW" },
+    buy  = { "WTT", "TROC" },
 }
 
 -- ============================================================
@@ -31,16 +37,46 @@ function TS:Init()
     if not db.keywords      then db.keywords      = {} end
     if not db.keywords.sell then db.keywords.sell = { unpack(DEFAULTS.keywords.sell) } end
     if not db.keywords.buy  then db.keywords.buy  = { unpack(DEFAULTS.keywords.buy)  } end
-    if not db.offers        then db.offers        = {} end
-    if not db.craftedItems  then db.craftedItems  = {} end
-    if not db.craftedNames  then db.craftedNames  = {} end
-    if db.scanGuild == nil  then db.scanGuild     = true end
-    if db.alertSound == nil then db.alertSound    = true end
-    if db.debugLog == nil   then db.debugLog      = false end
+    if not db.offers         then db.offers         = {} end
+    if not db.craftedItems   then db.craftedItems   = {} end
+    if not db.craftedNames   then db.craftedNames   = {} end
+    if not db.manualSellable then db.manualSellable = {} end  -- [itemID] = nom (ajout dropdown)
+    if not db.excludedItems  then db.excludedItems  = {} end  -- [itemID] = true (retirés du scan)
+    if not db.doneOffers     then db.doneOffers     = {} end  -- ["player_itemID"] = true (traités)
+    if db.scanGuild == nil   then db.scanGuild      = true end
+    if db.alertSound == nil  then db.alertSound     = true end
+    if db.debugLog == nil    then db.debugLog       = false end
 
     self.db           = db
     self.craftedItems = db.craftedItems
     self.craftedNames = db.craftedNames
+
+    -- Charger les bdd statiques (Data/Professions/*.lua) dans les tables de recherche
+    if self.LoadStaticData then self:LoadStaticData() end
+
+    -- Migration : purger les entrées de scan erronées ("UNKNOWN", venant de
+    -- l'Enchantement scanné via la mauvaise API avant le support Craft)
+    for id, prof in pairs(self.craftedItems) do
+        if prof == "UNKNOWN" then self.craftedItems[id] = nil end
+    end
+    for name, info in pairs(self.craftedNames) do
+        if type(info) == "table" and info.profession == "UNKNOWN" then
+            self.craftedNames[name] = nil
+        end
+    end
+
+    -- Migration : ré-injecter les mots-clés ajoutés après coup (WTT/TROC/LFW) dans les
+    -- listes déjà sauvegardées, sinon les défauts ne s'appliquent jamais aux DB existantes.
+    for side, words in pairs(KEYWORD_MIGRATIONS) do
+        local list = db.keywords[side]
+        for _, kw in ipairs(words) do
+            local present = false
+            for _, existing in ipairs(list) do
+                if existing == kw then present = true break end
+            end
+            if not present then table.insert(list, kw) end
+        end
+    end
 
     -- Log séparé dans TradeScannerLog (son propre fichier SavedVariables)
     if not TradeScannerLog then TradeScannerLog = { entries = {} } end
@@ -54,6 +90,35 @@ end
 local function StripChannelNumber(channelName)
     -- "4. freshtrade" -> "freshtrade"
     return channelName:gsub("^%d+%.%s*", ""):lower()
+end
+
+-- Retire le markup de chat (liens d'objet + codes couleur) pour fiabiliser le scan
+-- numérique (prix/quantité) : sans ça, les itemID (|Hitem:2205…) ou les codes
+-- couleur (|cff1eff00) pourraient fournir de faux chiffres.
+local function StripMarkup(msg)
+    msg = msg:gsub("|H.-|h%[.-%]|h", " ")     -- lien d'objet complet -> espace
+    msg = msg:gsub("|c%x%x%x%x%x%x%x%x", "")  -- ouverture couleur |cAARRGGBB
+    msg = msg:gsub("|r", "")                   -- fermeture couleur
+    return msg
+end
+
+-- Détecte un modificateur de quantité/unité dans un fragment de texte.
+-- Best-effort, sans normaliser le prix (trop ambigu) : on renvoie juste un libellé
+-- à afficher à côté du prix ("x5", "/stack", "ea"), ou nil.
+local function ExtractQuantity(text)
+    text = StripMarkup(text)
+    local low = text:lower()
+    local n = text:match("(%d+)%s*[xX]%f[%s%p%z]") or text:match("[xX]%s*(%d+)")
+    if n then return "x" .. n end
+    if low:find("/stack", 1, true) or low:find("per stack", 1, true)
+       or low:find("/stk", 1, true) or low:find("%f[%a]stack%f[%A]") then
+        return "/stack"
+    end
+    if low:find("%f[%a]each%f[%A]") or low:find("%f[%a]ea%f[%A]")
+       or low:find("%f[%a]piece%f[%A]") or low:find("/u", 1, true) then
+        return "ea"
+    end
+    return nil
 end
 
 local function DetectOfferType(msg, keywords)
@@ -70,20 +135,30 @@ end
 local function ExtractItemLinks(msg)
     local items = {}
     -- Format WoW: |Hitem:ITEMID:enchant:gem...|h[Nom Item]|h
-    for itemKey, itemName in msg:gmatch("|H(item:%d+[^|]*)|h%[([^%]]+)%]|h") do
+    -- On enregistre aussi la position (startPos/endPos) pour pouvoir associer
+    -- à chaque item le prix qui le suit (cf. ExtractPrice par segment).
+    local pattern     = "|H(item:%d+[^|]*)|h%[([^%]]+)%]|h"
+    local searchStart = 1
+    while true do
+        local s, e, itemKey, itemName = msg:find(pattern, searchStart)
+        if not s then break end
         local itemID = tonumber(itemKey:match("item:(%d+)"))
         if itemID then
             table.insert(items, {
-                itemID = itemID,
-                name   = itemName,
-                link   = "|H" .. itemKey .. "|h[" .. itemName .. "]|h",
+                itemID   = itemID,
+                name     = itemName,
+                link     = "|H" .. itemKey .. "|h[" .. itemName .. "]|h",
+                startPos = s,
+                endPos   = e,
             })
         end
+        searchStart = e + 1
     end
     return items
 end
 
 local function ExtractPrice(msg)
+    msg = StripMarkup(msg)
     local g, s, c
 
     -- Xg Ys Zc (entiers combinés)
@@ -128,6 +203,12 @@ local function ExtractPrice(msg)
         return string.format("%ss", s), tonumber(s) * 100
     end
 
+    -- Cuivre seul : "50c" (en dernier, pour ne pas primer sur g/s)
+    c = msg:match("(%d+)%s*[cC]")
+    if c then
+        return string.format("%sc", c), tonumber(c)
+    end
+
     return nil, 0
 end
 
@@ -159,6 +240,64 @@ function TS:LogRaw(player, channelName, msg, result)
     end
 end
 
+-- Analyse PURE d'un message (aucun effet de bord, n'écrit pas dans db.offers).
+-- Partagée par ParseMessage (production) et /ts retest (rejeu du log).
+-- Retourne :
+--   { offerType = "sell"|"buy"|nil,   -- type global (fallback)
+--     priceText, priceValue,          -- prix global (fallback)
+--     isService = bool,               -- service/LFW sans item
+--     items = { { itemID, name, link, offerType, priceText, priceValue, qtyText }, … } }
+function TS:Classify(msg)
+    local keywords = self.db.keywords
+    local globalType = DetectOfferType(msg, keywords)
+    local priceText, priceValue = ExtractPrice(msg)
+    local items = ExtractItemLinks(msg)
+
+    local result = {
+        offerType  = globalType,
+        priceText  = priceText,
+        priceValue = priceValue,
+        isService  = (globalType == "sell" and #items == 0
+                      and msg:upper():find("LFW", 1, true) ~= nil),
+        items      = {},
+    }
+
+    for i, item in ipairs(items) do
+        -- Type par item : le mot-clé PRÉCÈDE l'item → on lit le texte AVANT le lien
+        -- (depuis la fin de l'item précédent, ou le début du message). Gère les
+        -- messages mixtes : "WTS [A] WTB [B]". Fallback sur le type global.
+        local typeStart = (i > 1) and (items[i - 1].endPos + 1) or 1
+        local typeSeg   = msg:sub(typeStart, item.startPos - 1)
+        local itemType  = DetectOfferType(typeSeg, keywords) or globalType
+
+        -- Prix par item : le prix SUIT l'item → on lit le texte APRÈS le lien,
+        -- jusqu'au lien suivant (ou la fin). Gère les prix distincts :
+        --   "WTB [Greater Astral Essence] 60s OR/AND [Lesser Astral Essence] 20s"
+        -- Fallback sur le prix global.
+        local segEnd   = items[i + 1] and (items[i + 1].startPos - 1) or #msg
+        local priceSeg = msg:sub(item.endPos + 1, segEnd)
+        local pText, pValue = ExtractPrice(priceSeg)
+        if not pText then
+            pText, pValue = priceText, priceValue
+        end
+
+        -- Quantité/unité : cherchée après l'item d'abord, puis avant.
+        local qtyText = ExtractQuantity(priceSeg) or ExtractQuantity(typeSeg)
+
+        table.insert(result.items, {
+            itemID     = item.itemID,
+            name       = item.name,
+            link       = item.link,
+            offerType  = itemType,
+            priceText  = pText,
+            priceValue = pValue,
+            qtyText    = qtyText,
+        })
+    end
+
+    return result
+end
+
 -- source : "channel" | "guild"
 function TS:ParseMessage(msg, player, channelName, source)
     source = source or "channel"
@@ -173,26 +312,25 @@ function TS:ParseMessage(msg, player, channelName, source)
     end
     -- Pour /g (guild + GreenWall): pas de filtre de canal
 
-    local offerType = DetectOfferType(msg, self.db.keywords)
-    if not offerType then
+    local cls = self:Classify(msg)
+    if not cls.offerType then
         self:LogRaw(player, channelName, msg, "skip_kw")
         return
     end
 
-    self:LogRaw(player, channelName, msg, offerType)
+    self:LogRaw(player, channelName, msg, cls.offerType)
 
-    local items      = ExtractItemLinks(msg)
-    local priceText, priceValue = ExtractPrice(msg)
-
-    if #items == 0 then
+    if #cls.items == 0 then
         self:AddOffer({
-            offerType  = offerType,
+            offerType  = cls.offerType,
             player     = player,
             itemID     = nil,
             itemName   = nil,
             itemLink   = nil,
-            priceText  = priceText,
-            priceValue = priceValue,
+            priceText  = cls.priceText,
+            priceValue = cls.priceValue,
+            qtyText    = nil,
+            isService  = cls.isService,
             rawMsg     = msg,
             timestamp  = time(),
             canCraft   = false,
@@ -200,21 +338,23 @@ function TS:ParseMessage(msg, player, channelName, source)
             source     = source,
         })
     else
-        for _, item in ipairs(items) do
-            local canCraft = self:CanCraft(item.itemID)
+        for _, it in ipairs(cls.items) do
+            local cat, prof = self:GetProducible(it.itemID)
             self:AddOffer({
-                offerType  = offerType,
-                player     = player,
-                itemID     = item.itemID,
-                itemName   = item.name,
-                itemLink   = item.link,
-                priceText  = priceText,
-                priceValue = priceValue,
-                rawMsg     = msg,
-                timestamp  = time(),
-                canCraft   = canCraft,
-                profession = canCraft and self:GetCraftProfession(item.itemID) or nil,
-                source     = source,
+                offerType   = it.offerType,
+                player      = player,
+                itemID      = it.itemID,
+                itemName    = it.name,
+                itemLink    = it.link,
+                priceText   = it.priceText,
+                priceValue  = it.priceValue,
+                qtyText     = it.qtyText,
+                rawMsg      = msg,
+                timestamp   = time(),
+                canCraft    = cat ~= nil,
+                sellCategory = cat,
+                profession  = prof,
+                source      = source,
             })
         end
     end
@@ -223,6 +363,22 @@ end
 -- ============================================================
 -- BASE D'OFFRES
 -- ============================================================
+
+function TS:IsDone(player, itemID)
+    if not player or not itemID then return false end
+    local key = player .. "_" .. tostring(itemID)
+    return (self.db.doneOffers and self.db.doneOffers[key]) == true
+end
+
+function TS:MarkDone(player, itemID, fromNetwork)
+    if not player or not itemID then return end
+    self.db.doneOffers[player.."_"..tostring(itemID)] = true
+    if self.UI then self.UI:Refresh() end
+    if self.ProfPanel and self.ProfPanel.Refresh then self.ProfPanel:Refresh() end
+    if not fromNetwork and self.Net then
+        self.Net:BroadcastDone(player, itemID)
+    end
+end
 
 function TS:AddOffer(offer)
     local db  = self.db
@@ -233,12 +389,19 @@ function TS:AddOffer(offer)
         for i, existing in ipairs(db.offers) do
             if existing.player == offer.player
                and existing.itemID == offer.itemID then
-                existing.timestamp  = offer.timestamp
-                existing.priceText  = offer.priceText
-                existing.priceValue = offer.priceValue
-                existing.canCraft   = offer.canCraft
-                existing.profession = offer.profession
-                existing.source     = offer.source
+                existing.timestamp    = offer.timestamp
+                existing.offerType    = offer.offerType
+                existing.priceText    = offer.priceText
+                existing.priceValue   = offer.priceValue
+                existing.qtyText      = offer.qtyText
+                existing.canCraft     = offer.canCraft
+                existing.sellCategory = offer.sellCategory
+                existing.profession   = offer.profession
+                existing.source       = offer.source
+                -- Nouvelle demande du même joueur : clear le done flag
+                if db.doneOffers then
+                    db.doneOffers[existing.player.."_"..tostring(existing.itemID)] = nil
+                end
                 -- Remonter en tête de liste
                 table.remove(db.offers, i)
                 table.insert(db.offers, 1, existing)
@@ -272,6 +435,11 @@ function TS:AddOffer(offer)
     end
 
     if self.UI then self.UI:Refresh() end
+
+    -- Broadcaster la nouvelle offre (via réseau), sauf si elle vient du réseau
+    if self.Net and offer.source ~= "network" then
+        self.Net:BroadcastOffer(offer)
+    end
 end
 
 function TS:GetOffers(filterType, craftOnly)
@@ -281,7 +449,8 @@ function TS:GetOffers(filterType, craftOnly)
         if (now - offer.timestamp) <= OFFER_EXPIRY then
             local typeOk  = (filterType == nil or offer.offerType == filterType)
             local craftOk = (not craftOnly) or offer.canCraft
-            if typeOk and craftOk then
+            local doneOk  = not (offer.itemID and self:IsDone(offer.player, offer.itemID))
+            if typeOk and craftOk and doneOk then
                 table.insert(result, offer)
             end
         end
@@ -302,19 +471,120 @@ end
 -- INTÉGRATION MÉTIERS
 -- ============================================================
 
+-- Nom localisé d'un item (multilingue via l'API). Fallback = label de secours.
+function TS:GetItemName(itemID, fallback)
+    if not itemID then return fallback end
+    local name = GetItemInfo(itemID)
+    return name or fallback or ("item:" .. itemID)
+end
+
+-- Détermine si un itemID est "fournissable" par le joueur, et comment.
+-- Retourne category, profession :
+--   "manual"     = ajouté à la main via le dropdown
+--   "scan"       = recette scannée sur un perso
+--   "sellable"   = produit listé dans une bdd métier
+--   "disenchant" = mat de désenchantement listé dans une bdd
+-- Retourne nil si inconnu ou explicitement exclu du scan.
+function TS:GetProducible(itemID)
+    if not itemID then return nil end
+    if self.db and self.db.excludedItems and self.db.excludedItems[itemID] then
+        return nil
+    end
+    if self.db and self.db.manualSellable and self.db.manualSellable[itemID] then
+        return "manual", "Manuel"
+    end
+    local scanned = self.craftedItems[itemID]
+    if scanned then
+        return "scan", scanned
+    end
+    local s = self.staticItems and self.staticItems[itemID]
+    if s then
+        return s.category, s.profession
+    end
+    return nil
+end
+
+-- Vrai si le joueur peut fournir cet item (toutes catégories confondues)
+function TS:CanSell(itemID)
+    return (self:GetProducible(itemID)) ~= nil
+end
+
+-- Conservé pour compat : "peut fournir" (toutes sources)
 function TS:CanCraft(itemID)
-    if not itemID then return false end
-    return self.craftedItems[itemID] ~= nil
+    return self:CanSell(itemID)
 end
 
 function TS:GetCraftProfession(itemID)
-    return self.craftedItems[itemID]
+    local _, prof = self:GetProducible(itemID)
+    return prof
+end
+
+-- Bascule l'exclusion d'un item du scan (bouton filtre du panneau métier)
+function TS:ToggleExcluded(itemID)
+    if not itemID then return end
+    self.db.excludedItems = self.db.excludedItems or {}
+    if self.db.excludedItems[itemID] then
+        self.db.excludedItems[itemID] = nil
+    else
+        self.db.excludedItems[itemID] = true
+    end
+    self:RefreshCraftStatus()
+    return self.db.excludedItems[itemID] == true
+end
+
+-- Ajoute un item à la liste vendable manuelle (dropdown)
+function TS:AddManualSellable(itemID, name)
+    if not itemID then return end
+    self.db.manualSellable = self.db.manualSellable or {}
+    self.db.manualSellable[itemID] = name or self:GetItemName(itemID)
+    self:RefreshCraftStatus()
+end
+
+function TS:RemoveManualSellable(itemID)
+    if not itemID or not self.db.manualSellable then return end
+    self.db.manualSellable[itemID] = nil
+    self:RefreshCraftStatus()
+end
+
+-- Enregistre un produit scanné dans les tables de recherche (clé canonique)
+function TS:RecordCraftedItem(itemID, itemName, canonicalProf)
+    self.craftedItems[itemID] = canonicalProf
+    if itemName then
+        self.craftedNames[itemName:lower()] = {
+            itemID     = itemID,
+            profession = canonicalProf,
+        }
+    end
+end
+
+-- Lecteur unifié du métier ouvert.
+-- En Classic Era, l'Enchantement (et le Dressage) passent par l'API CRAFT,
+-- pas TradeSkill : GetTradeSkillLine() y renvoie "UNKNOWN".
+-- Retourne nom_localisé, isCraft.
+function TS:GetOpenProfessionInfo()
+    -- API Craft (Enchantement, Dressage)
+    if CraftFrame and CraftFrame:IsShown() then
+        local name = GetCraftDisplaySkillLine and GetCraftDisplaySkillLine()
+                  or (GetCraftName and GetCraftName())
+        if name and name ~= "" and name ~= "UNKNOWN" then
+            return name, true
+        end
+    end
+    -- API TradeSkill (autres métiers)
+    if GetTradeSkillLine then
+        local name = GetTradeSkillLine()
+        if name and name ~= "" and name ~= "UNKNOWN" then
+            return name, false
+        end
+    end
+    return nil, nil
 end
 
 function TS:ScanCurrentTradeSkill()
     if not GetTradeSkillLine then return 0, nil end
     local skillName = GetTradeSkillLine()
-    if not skillName or skillName == "" then return 0, nil end
+    if not skillName or skillName == "" or skillName == "UNKNOWN" then return 0, nil end
+    local canonical = self:ResolveProfession(skillName)
 
     local num   = GetNumTradeSkills and GetNumTradeSkills() or 0
     local count = 0
@@ -327,14 +597,7 @@ function TS:ScanCurrentTradeSkill()
             if link then
                 local itemID = tonumber(link:match("|Hitem:(%d+)"))
                 if itemID then
-                    self.craftedItems[itemID] = skillName
-                    local itemName = link:match("|h%[(.-)%]|h")
-                    if itemName then
-                        self.craftedNames[itemName:lower()] = {
-                            itemID     = itemID,
-                            profession = skillName,
-                        }
-                    end
+                    self:RecordCraftedItem(itemID, link:match("|h%[(.-)%]|h"), canonical)
                     count = count + 1
                 end
             end
@@ -346,17 +609,62 @@ function TS:ScanCurrentTradeSkill()
         self:RefreshCraftStatus()
     end
 
-    return count, skillName
+    return count, canonical
+end
+
+-- Scan via l'API CRAFT (Enchantement en Classic Era)
+function TS:ScanCurrentCraft()
+    if not GetNumCrafts then return 0, nil end
+    local skillName = GetCraftDisplaySkillLine and GetCraftDisplaySkillLine()
+                   or (GetCraftName and GetCraftName())
+    if not skillName or skillName == "" or skillName == "UNKNOWN" then return 0, nil end
+    local canonical = self:ResolveProfession(skillName)
+
+    local num   = GetNumCrafts() or 0
+    local count = 0
+
+    for i = 1, num do
+        local craftName, _, craftType = GetCraftInfo(i)
+        -- Ignorer les en-têtes ; la plupart des enchants n'ont pas de lien d'objet
+        if craftName and craftType ~= "header" then
+            local link = GetCraftItemLink and GetCraftItemLink(i)
+            if link then
+                local itemID = tonumber(link:match("|Hitem:(%d+)"))
+                if itemID then
+                    self:RecordCraftedItem(itemID, link:match("|h%[(.-)%]|h"), canonical)
+                    count = count + 1
+                end
+            end
+        end
+    end
+
+    if count > 0 then
+        self:RefreshCraftStatus()
+    end
+
+    return count, canonical
+end
+
+-- Scan du métier ouvert, quel que soit l'API (TradeSkill ou Craft)
+function TS:ScanOpenProfession()
+    local _, isCraft = self:GetOpenProfessionInfo()
+    if isCraft then
+        return self:ScanCurrentCraft()
+    end
+    return self:ScanCurrentTradeSkill()
 end
 
 function TS:RefreshCraftStatus()
     for _, offer in ipairs(self.db.offers) do
         if offer.itemID then
-            offer.canCraft   = self:CanCraft(offer.itemID)
-            offer.profession = offer.canCraft and self:GetCraftProfession(offer.itemID) or nil
+            local cat, prof = self:GetProducible(offer.itemID)
+            offer.canCraft     = cat ~= nil
+            offer.sellCategory = cat
+            offer.profession   = prof
         end
     end
     if self.UI then self.UI:Refresh() end
+    if self.ProfPanel and self.ProfPanel.Refresh then self.ProfPanel:Refresh() end
 end
 
 function TS:GetCraftedProfessions()
@@ -366,6 +674,93 @@ function TS:GetCraftedProfessions()
         profs[profName] = (profs[profName] or 0) + 1
     end
     return profs
+end
+
+-- Offres WTB que le joueur peut fournir (= onglet "Sellable")
+function TS:GetSellableOffers()
+    local now    = time()
+    local result = {}
+    for _, offer in ipairs(self.db.offers) do
+        if offer.offerType == "buy"
+           and (now - offer.timestamp) <= OFFER_EXPIRY
+           and offer.itemID and self:CanSell(offer.itemID) then
+            table.insert(result, offer)
+        end
+    end
+    return result
+end
+
+-- ------------------------------------------------------------------
+-- "Qui veut quoi" pour un métier donné (panneau latéral)
+-- profName = clé canonique ("Enchanting")
+-- Retourne { disenchant = {entry...}, sellable = {entry...}, enchants = {entry...} }
+-- entry = { itemID=, name=, link=, players={nom...}, count=N }
+-- ------------------------------------------------------------------
+local function AddWant(bucket, index, key, offer, name)
+    local entry = index[key]
+    if not entry then
+        entry = {
+            itemID  = offer and offer.itemID,
+            name    = name,
+            link    = offer and offer.itemLink,
+            players = {},
+            seen    = {},
+            count   = 0,
+        }
+        index[key] = entry
+        table.insert(bucket, entry)
+    end
+    local p = offer and offer.player
+    if p and not entry.seen[p] then
+        entry.seen[p] = true
+        table.insert(entry.players, p)
+        entry.count = entry.count + 1
+    end
+    if offer and offer.itemLink and not entry.link then
+        entry.link = offer.itemLink
+    end
+end
+
+function TS:GetGuildWants(profName)
+    local result = { disenchant = {}, sellable = {}, enchants = {} }
+    if not profName then return result end
+
+    local idxDis, idxSell, idxEnch = {}, {}, {}
+    local disMats = self:GetDisenchantMats(profName)
+    local now = time()
+
+    for _, offer in ipairs(self.db.offers) do
+        if offer.offerType == "buy" and (now - offer.timestamp) <= OFFER_EXPIRY then
+            if offer.itemID then
+                if disMats[offer.itemID] then
+                    AddWant(result.disenchant, idxDis, offer.itemID, offer,
+                            self:GetItemName(offer.itemID, disMats[offer.itemID]))
+                else
+                    local cat, prof = self:GetProducible(offer.itemID)
+                    if cat then
+                        local canonical = self:ResolveProfession(prof)
+                        if cat == "manual" or canonical == profName then
+                            AddWant(result.sellable, idxSell, offer.itemID, offer,
+                                    self:GetItemName(offer.itemID, offer.itemName))
+                        end
+                    end
+                end
+            elseif offer.rawMsg then
+                -- Enchantements (services sans item) : matching texte best-effort
+                local low = offer.rawMsg:lower()
+                for _, ench in ipairs(self.staticEnchants or {}) do
+                    if self:ResolveProfession(ench.profession) == profName then
+                        local needle = ench.name:lower()
+                        if low:find(needle, 1, true) then
+                            AddWant(result.enchants, idxEnch, ench.name, offer, ench.name)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return result
 end
 
 -- ============================================================
@@ -398,6 +793,22 @@ eventFrame:RegisterEvent("CHAT_MSG_CHANNEL")
 eventFrame:RegisterEvent("CHAT_MSG_GUILD")       -- guild + GreenWall
 eventFrame:RegisterEvent("TRADE_SKILL_SHOW")
 eventFrame:RegisterEvent("TRADE_SKILL_LIST_UPDATE")
+eventFrame:RegisterEvent("TRADE_SKILL_CLOSE")
+eventFrame:RegisterEvent("CRAFT_SHOW")            -- Enchantement (API Craft)
+eventFrame:RegisterEvent("CRAFT_UPDATE")
+eventFrame:RegisterEvent("CRAFT_CLOSE")
+
+-- Scan (protégé) + affichage du panneau, commun TradeSkill et Craft
+local function HandleProfessionShow()
+    C_Timer.After(0.3, function()
+        local ok, err = pcall(function() TS:ScanOpenProfession() end)
+        if not ok then print("|cFFFF4444TS scan error:|r " .. tostring(err)) end
+        if TS.ProfPanel then
+            local ok2, err2 = pcall(function() TS.ProfPanel:OnTradeSkillShow() end)
+            if not ok2 then print("|cFFFF4444TS panel error:|r " .. tostring(err2)) end
+        end
+    end)
+end
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -413,6 +824,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         end
         -- Bouton minimap
         if TS.Minimap then TS.Minimap:Init() end
+        -- Réseau inter-addon
+        if TS.Net then TS.Net:Init() end
         -- Compter les recettes déjà en cache
         local cached = 0
         for _ in pairs(TS.craftedItems or {}) do cached = cached + 1 end
@@ -439,10 +852,12 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             TS:ParseMessage(msg, playerShort, "guild", "guild")
         end
 
-    elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_LIST_UPDATE" then
-        C_Timer.After(0.3, function()
-            TS:ScanCurrentTradeSkill()
-        end)
+    elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_LIST_UPDATE"
+        or event == "CRAFT_SHOW" or event == "CRAFT_UPDATE" then
+        HandleProfessionShow()
+
+    elseif event == "TRADE_SKILL_CLOSE" or event == "CRAFT_CLOSE" then
+        if TS.ProfPanel then TS.ProfPanel:OnTradeSkillClose() end
     end
 end)
 
@@ -464,11 +879,54 @@ function TS:HandleSlash(msg)
         print("|cFF00CCFFTradeScanner|r Offers cleared.")
 
     elseif cmd == "scan" then
-        local count, prof = self:ScanCurrentTradeSkill()
+        local count, prof = self:ScanOpenProfession()
         if prof then
             print(string.format("|cFF00CCFFTradeScanner|r %s: %d recipes indexed.", prof, count))
         else
             print("|cFF00CCFFTradeScanner|r Open a profession window first.")
+        end
+
+    elseif cmd == "panel" then
+        -- Force / diagnostique le panneau métier
+        if not self.ProfPanel then
+            print("|cFF00CCFFTradeScanner|r ProfPanel non chargé.")
+            return
+        end
+        local name, isCraft = self:GetOpenProfessionInfo()
+        if not name then
+            print("|cFF00CCFFTradeScanner|r Aucune fenêtre de métier ouverte (ni TradeSkill ni Craft).")
+            return
+        end
+        print(string.format("|cFF00CCFFTradeScanner|r Métier: '%s' (%s) → canonique: '%s'",
+            name, isCraft and "Craft" or "TradeSkill", tostring(self:ResolveProfession(name))))
+        local ok, err = pcall(function() self.ProfPanel:OnTradeSkillShow() end)
+        if not ok then print("|cFFFF4444Panel error:|r " .. tostring(err)) end
+
+    elseif cmd == "sell" then
+        -- /ts sell <lien d'objet>  → ajoute/retire de la liste vendable manuelle
+        -- (msg déjà en minuscules : on matche "item:" présent dans les deux casses)
+        local itemID = tonumber((arg or ""):match("item:(%d+)")) or tonumber(arg)
+        if itemID then
+            if self.db.manualSellable[itemID] then
+                self:RemoveManualSellable(itemID)
+                print("|cFF00CCFFTradeScanner|r Retiré du vendable: " .. self:GetItemName(itemID))
+            else
+                self:AddManualSellable(itemID)
+                print("|cFF00CCFFTradeScanner|r Ajouté au vendable: " .. self:GetItemName(itemID))
+            end
+        else
+            print("|cFF00CCFFTradeScanner|r Usage: /ts sell <shift-clic d'un objet>")
+        end
+
+    elseif cmd == "exclude" then
+        -- /ts exclude <lien d'objet>  → retire/réintègre un item du scan
+        local itemID = tonumber((arg or ""):match("item:(%d+)")) or tonumber(arg)
+        if itemID then
+            local excluded = self:ToggleExcluded(itemID)
+            local state = excluded and "|cFFFF4444exclu|r" or "|cFF33DD33réintégré|r"
+            print("|cFF00CCFFTradeScanner|r " .. self:GetItemName(itemID) .. " " .. state)
+        else
+            print("|cFF00CCFFTradeScanner|r Usage: /ts exclude <shift-clic d'un objet>")
         end
 
     elseif cmd == "channel" then
@@ -539,6 +997,50 @@ function TS:HandleSlash(msg)
         if self.log then self.log.entries = {} end
         print("|cFF00CCFFTradeScanner|r Log effacé.")
 
+    elseif cmd == "retest" then
+        -- Rejoue le parseur courant sur les messages déjà capturés (dry-run :
+        -- aucune écriture d'offre). Valide les évolutions du parseur sur des cas réels.
+        local entries    = (self.log and self.log.entries) or {}
+        local limit      = tonumber(arg) or 30
+        local counts     = { sell = 0, buy = 0, skip_kw = 0 }
+        local changes    = {}
+        local considered = 0
+        for _, e in ipairs(entries) do
+            if e.r ~= "skip_chan" then          -- on ignore le hors-canal (non pertinent)
+                considered = considered + 1
+                local cls    = self:Classify(e.m or "")
+                local newCat = cls.offerType or "skip_kw"
+                counts[newCat] = (counts[newCat] or 0) + 1
+                if newCat ~= e.r then
+                    table.insert(changes, { e = e, from = e.r, to = newCat, cls = cls })
+                end
+            end
+        end
+        print(string.format("|cFF00CCFFTradeScanner retest|r — %d messages rejoués (hors skip_chan)", considered))
+        print(string.format("  bilan : |cFF33DD33sell=%d|r |cFF33AAFFbuy=%d|r |cFFFF9900skip_kw=%d|r — |cFFFFFF00%d changements|r",
+            counts.sell or 0, counts.buy or 0, counts.skip_kw or 0, #changes))
+        local shown = math.min(limit, #changes)
+        for i = 1, shown do
+            local ch  = changes[i]
+            local txt = ch.e.m or ""
+            if #txt > 55 then txt = txt:sub(1, 55) .. "…" end
+            local extra = ""
+            if #ch.cls.items > 0 then
+                local parts = {}
+                for _, it in ipairs(ch.cls.items) do
+                    parts[#parts + 1] = string.format("%s%s",
+                        it.priceText or "—", it.qtyText and (" " .. it.qtyText) or "")
+                end
+                extra = " |cFF888888{" .. table.concat(parts, ", ") .. "}|r"
+            elseif ch.cls.priceText then
+                extra = " |cFF888888{" .. ch.cls.priceText .. "}|r"
+            end
+            print(string.format("  |cFFFFFF00%s→%s|r %s%s", tostring(ch.from), ch.to, txt, extra))
+        end
+        if #changes > shown then
+            print(string.format("  … (+%d autres ; /ts retest %d pour tout voir)", #changes - shown, #changes))
+        end
+
     elseif cmd == "guild" then
         self.db.scanGuild = not self.db.scanGuild
         local state = self.db.scanGuild and "|cFF33DD33enabled|r" or "|cFFFF4444disabled|r"
@@ -553,11 +1055,14 @@ function TS:HandleSlash(msg)
         print("  /ts                       - open/close window")
         print("  /ts clear                 - clear all offers")
         print("  /ts scan                  - scan open profession window")
+        print("  /ts sell <shift-clic>     - ajoute/retire un item vendable (manuel)")
+        print("  /ts exclude <shift-clic>  - exclut/réintègre un item du scan")
         print("  /ts channel <name>        - set channel (default: freshtrade)")
         print("  /ts guild                 - toggle /g scan (GreenWall)")
         print("  /ts alert                 - toggle craft alert sound")
         print("  /ts debug                 - toggle affichage temps réel du canal")
         print("  /ts log [N]               - afficher les N derniers messages (défaut: 30)")
+        print("  /ts retest [N]            - rejouer le parseur sur le log (valide les évolutions)")
         print("  /ts logclear              - vider le log")
         print("  /ts add sell <WORD>       - add a sell keyword")
         print("  /ts add buy <WORD>        - add a buy keyword")
