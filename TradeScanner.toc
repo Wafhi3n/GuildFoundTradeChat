@@ -2,7 +2,7 @@
 ## Title: TradeScanner
 ## Notes: Scanner de canal de commerce avec intégration métiers. /ts pour ouvrir.
 ## Author:
-## Version: 1.1
+## Version: 1.2.0
 ## SavedVariables: TradeScannerDB, TradeScannerLog
 
 TradeScanner.lua
