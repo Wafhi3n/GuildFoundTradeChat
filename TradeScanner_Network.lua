@@ -15,18 +15,28 @@ local MAX_OFFERS  = 50     -- max offres envoyées par sync
 -- ENVOI
 -- ============================================================
 
+-- Envoi guilde locale (canal addon). Jamais soumis à ADDON_ACTION_BLOCKED.
 function NET:Send(payload)
     if not payload or payload == "" then return end
-
-    -- Guilde locale (API standard WoW)
     if C_ChatInfo and C_ChatInfo.SendAddonMessage then
         C_ChatInfo.SendAddonMessage(PREFIX, payload, "GUILD")
     end
+end
 
-    -- GreenWall (confédération : guildes sœurs cross-serveur)
-    if GreenWallAPI and type(GreenWallAPI.SendMessage) == "function" then
-        pcall(GreenWallAPI.SendMessage, PREFIX, payload)
+-- Envoi à la confédération (guildes sœurs) via GreenWall.
+-- ⚠️ À n'appeler QUE dans la pile d'un hardware event (clic/touche joueur) :
+-- GreenWall relaie via SendChatMessage sur un canal, fonction protégée que le
+-- client refuse d'exécuter hors hardware event (→ ADDON_ACTION_BLOCKED). C'est
+-- pourquoi seules les actions de commande (CO/CC/CA, déclenchées par un bouton)
+-- passent par ici ; les syncs auto (HI/OF/PR) restent en guilde locale.
+function NET:SendConfederation(payload)
+    if not payload or payload == "" then return end
+    if TS.db and TS.db.useGreenWall == false then return end
+    if not (GreenWallAPI and type(GreenWallAPI.SendMessage) == "function") then return end
+    if TS.db and TS.db.gwDebug then
+        print("|cFF00CCFF[GW→]|r " .. payload)
     end
+    pcall(GreenWallAPI.SendMessage, PREFIX, payload)
 end
 
 -- Envoie un HELLO (invite les autres à envoyer leurs offres)
@@ -82,7 +92,8 @@ end
 
 -- Nouvelle commande : "CO|buyer|kind|id|qty|priceValue|priceText|profession|name"
 --   kind = "I" (item, id=itemID) | "E" (enchant, id=spellID, name=libellé)
-function NET:BroadcastOrder(o)
+--   fromUser = déclenchée par un clic joueur → propageable cross-guilde (GreenWall).
+function NET:BroadcastOrder(o, fromUser)
     if not o then return end
     local kind = o.enchantID and "E" or "I"
     local id   = o.enchantID or o.itemID
@@ -97,18 +108,23 @@ function NET:BroadcastOrder(o)
         o.profession or "",
         (o.enchantName or ""):gsub("|", ""))
     self:Send(payload)
+    if fromUser then self:SendConfederation(payload) end
 end
 
--- Annulation : "CC|buyer|kind|id"
+-- Annulation : "CC|buyer|kind|id" (toujours déclenchée par un clic → cross-guilde)
 function NET:BroadcastCancel(buyer, kind, id)
     if not buyer or not id then return end
-    self:Send(string.format("CC|%s|%s|%d", buyer, kind or "I", id))
+    local payload = string.format("CC|%s|%s|%d", buyer, kind or "I", id)
+    self:Send(payload)
+    self:SendConfederation(payload)
 end
 
--- Acceptation : "CA|crafter|buyer|kind|id"
+-- Acceptation : "CA|crafter|buyer|kind|id" (clic → cross-guilde)
 function NET:BroadcastAccept(crafter, buyer, kind, id)
     if not crafter or not buyer or not id then return end
-    self:Send(string.format("CA|%s|%s|%s|%d", crafter, buyer, kind or "I", id))
+    local payload = string.format("CA|%s|%s|%s|%d", crafter, buyer, kind or "I", id)
+    self:Send(payload)
+    self:SendConfederation(payload)
 end
 
 -- Envoie toutes les commandes actives staggered (réponse à HI)
@@ -274,15 +290,16 @@ function NET:RegisterGreenWall(attempt)
     if GreenWallAPI and type(GreenWallAPI.AddMessageHandler) == "function" then
         local ok = pcall(function()
             GreenWallAPI.AddMessageHandler(function(_, sender, message, echo, guild)
+                if TS.db and TS.db.gwDebug then
+                    print(string.format("|cFF00CCFF[GW←]|r %s (echo=%s guild=%s) %s",
+                        tostring(sender), tostring(echo), tostring(guild), tostring(message)))
+                end
                 if echo or guild then return end
                 NET:HandleMessage(sender, message)
             end, PREFIX, 0)
         end)
         if ok then
             self.gwRegistered = true
-            -- Re-HELLO une fois branché sur la confédération pour récupérer
-            -- les offres/commandes déjà actives des guildes sœurs.
-            C_Timer.After(HELLO_DELAY, function() NET:BroadcastHello() end)
             return
         end
     end

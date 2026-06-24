@@ -33,6 +33,15 @@ L["Enchantment order placed: %s x%d"]                   = "Commande d'enchanteme
 L["%s wants %s x%d (%s) — /w %s"]                       = "%s veut %s x%d (%s) — /w %s"
 L["|cFF33DD33%s|r is going to fulfill your order: %s"]  = "|cFF33DD33%s|r va honorer ta commande : %s"
 
+-- TradeScanner_BagSell (popup WTS depuis le sac)
+L["Sell to Guild Economy"]                               = "Vendre sur Guild Economy"
+L["Note"]                                                = "Note"
+L["Sell"]                                                = "Vendre"
+L["Cancel"]                                              = "Annuler"
+L["Not connected to the trade channel. Channel to join:"] = "Pas connecté au canal de commerce. Canal à rejoindre :"
+L["Join"]                                                = "Rejoindre"
+L["Could not join channel '%s'."]                        = "Impossible de rejoindre le canal « %s »."
+
 -- TradeScanner_UI
 L["Manual sellable (click to remove)"]                   = "Vendable manuel (clic = retirer)"
 L["(empty)"]                                             = "(vide)"

@@ -185,6 +185,20 @@ function TS:_CmdErrors(arg)
     end
 end
 
+function TS:_CmdConfed()
+    self.db.useGreenWall = not self.db.useGreenWall
+    local state = self.db.useGreenWall and "|cFF33DD33enabled|r" or "|cFFFF4444disabled|r"
+    print("|cFF00CCFFGuild Economy|r Cross-realm sync (GreenWall): " .. state ..
+        " |cFF888888(disable to silence ADDON_ACTION_BLOCKED)|r")
+end
+
+function TS:_CmdGwDebug()
+    self.db.gwDebug = not self.db.gwDebug
+    local state = self.db.gwDebug and "|cFF33DD33ON|r" or "|cFFFF4444OFF|r"
+    print("|cFF00CCFFGuild Economy|r GreenWall debug: " .. state ..
+        " |cFF888888([GW->] envois, [GW<-] receptions cross-guilde)|r")
+end
+
 function TS:_CmdHelp()
     print("|cFF00CCFFGuild Economy|r --- Help ---")
     print("  /ts                       - open/close window")
@@ -196,6 +210,9 @@ function TS:_CmdHelp()
     print("  /ts exclude <shift-click> - exclude/include an item from scan")
     print("  /ts channel <name>        - set channel (default: freshtrade)")
     print("  /ts guild                 - toggle /g scan (GreenWall)")
+    print("  /ts wts                   - toggle bag Alt-right-click WTS shortcut")
+    print("  /ts confed                - toggle cross-realm sync (GreenWall)")
+    print("  /ts gwdebug               - toggle GreenWall send/recv debug prints")
     print("  /ts alert                 - toggle craft alert sound")
     print("  /ts debug                 - toggle real-time channel display")
     print("  /ts log [N]               - show last N messages (default: 30)")
@@ -248,6 +265,12 @@ function TS:HandleSlash(msg)
         self.db.scanGuild = not self.db.scanGuild
         local state = self.db.scanGuild and "|cFF33DD33enabled|r" or "|cFFFF4444disabled|r"
         print("|cFF00CCFFGuild Economy|r Guild chat scan (GreenWall): " .. state)
+    elseif cmd == "wts" then
+        self.db.bagSellEnabled = not self.db.bagSellEnabled
+        local state = self.db.bagSellEnabled and "|cFF33DD33enabled|r" or "|cFFFF4444disabled|r"
+        print("|cFF00CCFFGuild Economy|r Bag Alt-right-click WTS shortcut: " .. state)
+    elseif cmd == "confed" or cmd == "greenwall" then self:_CmdConfed()
+    elseif cmd == "gwdebug" then self:_CmdGwDebug()
     elseif cmd == "keywords" or cmd == "kw" then
         print("|cFF00CCFFGuild Economy|r Sell keywords: " .. table.concat(self.db.keywords.sell, ", "))
         print("|cFF00CCFFGuild Economy|r Buy keywords:  " .. table.concat(self.db.keywords.buy,  ", "))

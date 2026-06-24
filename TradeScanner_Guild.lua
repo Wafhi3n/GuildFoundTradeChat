@@ -131,7 +131,8 @@ function Guild:AddOrder(o, fromNetwork)
     else
         table.insert(TS.db.craftOrders, o)
     end
-    if not fromNetwork and TS.Net then TS.Net:BroadcastOrder(o) end
+    -- fromNetwork=false ⇒ commande placée par le joueur (pile de clic) ⇒ propage cross-guilde
+    if not fromNetwork and TS.Net then TS.Net:BroadcastOrder(o, true) end
     -- Alerter seulement pour les nouvelles commandes, pas les resyncs HI
     if fromNetwork and isNew and self:IHaveProfession(o.profession) then self:AlertOrder(o) end
     self:Refresh()

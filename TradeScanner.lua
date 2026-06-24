@@ -70,6 +70,8 @@ function TS:Init()
     if db.alertSound == nil  then db.alertSound     = true end
     if db.scanGuild  == nil  then db.scanGuild      = true end
     if db.debugLog   == nil  then db.debugLog       = false end
+    if db.bagSellEnabled == nil then db.bagSellEnabled = true end
+    if db.useGreenWall   == nil then db.useGreenWall   = true end
 
     self.db           = db
     self.craftedItems = db.craftedItems
@@ -224,6 +226,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if TS.Minimap then TS.Minimap:Init() end
         if TS.Net     then TS.Net:Init()     end
         if TS.Guild   then TS.Guild:Init()   end
+        if TS.BagSell then TS.BagSell:Init() end
         local _origErr = geterrorhandler and geterrorhandler()
         seterrorhandler(function(err)
             local db = TS.db

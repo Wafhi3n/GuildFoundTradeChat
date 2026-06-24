@@ -274,6 +274,27 @@ function TS:ParsePrice(text)
     return ExtractPrice(text or "")
 end
 
+-- Creates a WTS offer for the local player (bag Alt-right-click → WTS popup).
+-- source="self" (≠ "network") → AddOffer broadcasts OF and refreshes the UI,
+-- so the offer reaches addon users even if the chat post fails. The later chat
+-- echo dedups by player+itemID. Note (rawMsg) and qtyText are local-only: the
+-- OF protocol carries neither, but the chat message does.
+function TS:CreateLocalOffer(itemID, itemLink, itemName, priceText, priceValue, qtyText, note)
+    if not itemID then return end
+    local me = UnitName("player") or "?"
+    local cat, prof = self:GetProducible(itemID)
+    self:AddOffer({
+        offerType    = "sell", player = me,
+        itemID       = itemID, itemName = itemName or self:GetItemName(itemID),
+        itemLink     = itemLink,
+        priceText    = priceText, priceValue = priceValue or 0,
+        qtyText      = qtyText, rawMsg = (note ~= "" and note) or nil,
+        timestamp    = time(),
+        canCraft     = cat ~= nil, sellCategory = cat, profession = prof,
+        source       = "self",
+    })
+end
+
 -- ============================================================
 -- SELLABLE + GUILD WANTS + CRAFT ALERTS
 -- ============================================================
