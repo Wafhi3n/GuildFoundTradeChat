@@ -90,7 +90,10 @@ function MM:Build()
 
     btn:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoneButton-Highlight")
     btn:SetScript("OnClick", function(_, mouseBtn)
-        if mouseBtn == "LeftButton" and TS.UI then TS.UI:Toggle() end
+        if mouseBtn == "LeftButton" and TS.UI then
+            TS.UI:Toggle()
+            if TS.Net then TS.Net:BroadcastWho() end  -- clic = hardware event → s'annoncer cross-guilde
+        end
     end)
 
     SetupTooltip(btn, self)

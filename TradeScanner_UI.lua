@@ -179,7 +179,10 @@ function UI:_BuildSellManagement(pane)
     self.manageDrop = manageDrop
     local refreshBtn = CreateFrame("Button", nil, pane, "UIPanelButtonTemplate")
     refreshBtn:SetSize(90, 22); refreshBtn:SetPoint("BOTTOMRIGHT", -28, 8)
-    refreshBtn:SetText("Refresh"); refreshBtn:SetScript("OnClick", function() UI:Refresh() end)
+    refreshBtn:SetText("Refresh"); refreshBtn:SetScript("OnClick", function()
+        if TS.Net then TS.Net:BroadcastWho() end
+        UI:Refresh()
+    end)
     local clearBtn = CreateFrame("Button", nil, pane, "UIPanelButtonTemplate")
     clearBtn:SetSize(70, 22); clearBtn:SetPoint("BOTTOMRIGHT", -122, 8)
     clearBtn:SetText("Clear"); clearBtn:SetScript("OnClick", function() TS.db.offers = {}; UI:Refresh() end)
@@ -231,7 +234,11 @@ function UI:BuildTabButton(parent, tabDef, index)
     txt:SetAllPoints(); txt:SetText(tabDef.label); txt:SetTextColor(0.7, 0.7, 0.7)
     btn.txt = txt
     btn.tabID = tabDef.id
-    btn:SetScript("OnClick", function(b) UI:SetTab(b.tabID) end)
+    -- Clic d'onglet = hardware event → on en profite pour s'annoncer cross-guilde (throttlé).
+    btn:SetScript("OnClick", function(b)
+        UI:SetTab(b.tabID)
+        if TS.Net then TS.Net:BroadcastWho() end
+    end)
     btn:SetScript("OnEnter", function(b)
         if UI.activeTab ~= b.tabID then b.bg:SetColorTexture(0.2, 0.2, 0.3, 0.9) end
     end)
@@ -256,8 +263,6 @@ function UI:SetTab(tabID)
     if self.offersPane then self.offersPane:SetShown(not isOrders) end
     if self.ordersPane then self.ordersPane:SetShown(isOrders) end
     if tabID == "sell" and TS.Minimap then TS.Minimap:SetAlert(false) end
-    -- Ouvrir Orders (clic = hardware event) → ping de présence "qui est en ligne ?"
-    if isOrders and TS.Net then TS.Net:BroadcastWho() end
     self:Refresh()
 end
 
