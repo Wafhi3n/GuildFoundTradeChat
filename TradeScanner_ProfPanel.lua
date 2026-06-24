@@ -18,33 +18,10 @@ local MAX_ROWS  = 26
 -- Helpers
 -- ------------------------------------------------------------------
 
-local function IsCraftOpen()
-    return CraftFrame and CraftFrame:IsShown()
-end
-
 local function GetOpenProfession()
     local name = TS:GetOpenProfessionInfo()
     if not name then return nil end
     return TS:ResolveProfession(name), name
-end
-
-local function GetSelectedItemID()
-    -- API Craft (Enchantement)
-    if IsCraftOpen() and GetCraftSelectionIndex then
-        local idx = GetCraftSelectionIndex()
-        if idx and idx > 0 and GetCraftItemLink then
-            local link = GetCraftItemLink(idx)
-            if link then return tonumber(link:match("|Hitem:(%d+)")), link end
-        end
-        return nil
-    end
-    -- API TradeSkill
-    if not GetTradeSkillSelectionIndex then return nil end
-    local idx = GetTradeSkillSelectionIndex()
-    if not idx or idx < 1 then return nil end
-    local link = GetTradeSkillItemLink(idx)
-    if not link then return nil end
-    return tonumber(link:match("|Hitem:(%d+)")), link
 end
 
 -- ------------------------------------------------------------------
@@ -98,7 +75,7 @@ function PP:Build()
     filterBtn:SetPoint("LEFT", scanBtn, "RIGHT", 6, 0)
     filterBtn:SetText("Filter selected")
     filterBtn:SetScript("OnClick", function()
-        local itemID, link = GetSelectedItemID()
+        local itemID, link = TS:GetSelectedRecipe()
         if not itemID then
             print("|cFF00CCFFTradeScanner|r Sélectionne d'abord une recette.")
             return
@@ -177,6 +154,27 @@ function PP:BuildRow(parent, index)
         GameTooltip:SetOwner(r, "ANCHOR_RIGHT")
         GameTooltip:ClearLines()
         if r.isHeader then return end
+        if r.entry.isOrder then
+            local o = r.entry.order
+            if o.itemID then
+                pcall(GameTooltip.SetHyperlink, GameTooltip, "item:" .. o.itemID)
+            else
+                GameTooltip:SetText(TS.Guild:OrderName(o), 1, 1, 1)
+                GameTooltip:AddLine("|cFFCC88FFEnchantement (service)|r")
+            end
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine(string.format("|cFFFFCC00%s|r veut x%d  %s", o.buyer, o.qty or 1, o.priceText or ""), 1, 1, 1)
+            if o.status == "accepted" then
+                GameTooltip:AddLine("|cFF33DD33Accepté par " .. (o.acceptedBy or "?") .. "|r")
+            end
+            if r.entry.mineOrder then
+                GameTooltip:AddLine("|cFF888888Ta commande — clic = annuler|r")
+            else
+                GameTooltip:AddLine("|cFF888888Clic = accepter (whisper " .. o.buyer .. ")|r")
+            end
+            GameTooltip:Show()
+            return
+        end
         if r.entry.link then
             local hyperlink = r.entry.link:match("|H([^|]+)|h")
             if hyperlink then pcall(GameTooltip.SetHyperlink, GameTooltip, hyperlink) end
@@ -199,7 +197,15 @@ function PP:BuildRow(parent, index)
     end)
     row:SetScript("OnLeave", GameTooltip_Hide)
     row:SetScript("OnClick", function(r)
-        if r.entry and r.entry.players and r.entry.players[1] then
+        if r.entry and r.entry.isOrder then
+            local o   = r.entry.order
+            local key = TS.Guild:OrderKey(o)
+            if r.entry.mineOrder then
+                TS.Guild:CancelOrder(o.buyer, key, false)
+            else
+                TS.Guild:AcceptOrder(o.buyer, key, false)
+            end
+        elseif r.entry and r.entry.players and r.entry.players[1] then
             ChatFrame_OpenChat("/w " .. r.entry.players[1] .. " ")
         end
     end)
@@ -240,6 +246,25 @@ function PP:BuildDisplayList(profName)
         table.insert(list, { isHeader = true, name = label, color = color })
         for _, e in ipairs(rowsToAdd) do
             table.insert(list, e)
+        end
+    end
+
+    -- Commandes de craft pour ce métier (en haut). Clic = Accept (commande d'un autre)
+    -- ou Cancel (ta propre commande, marquée "(moi)").
+    if TS.Guild then
+        local me     = UnitName("player") or "?"
+        local orders = TS.Guild:GetOpenOrders(profName)
+        if #orders > 0 then
+            table.insert(list, { isHeader = true, name = "|cFF66FF99— Craft orders —|r" })
+            for _, o in ipairs(orders) do
+                local nm   = TS.Guild:OrderName(o)
+                local mine = (o.buyer == me)
+                table.insert(list, {
+                    isOrder = true, order = o, itemID = o.itemID, mineOrder = mine,
+                    name    = nm .. " |cFF888888" .. o.buyer .. (mine and " (moi)" or "") .. "|r",
+                    count   = o.qty or 1,
+                })
+            end
         end
     end
 
@@ -310,7 +335,7 @@ function PP:Anchor()
     if not self.frame then return end
     -- S'accroche à la fenêtre réellement ouverte : CraftFrame (Enchantement)
     -- ou TradeSkillFrame (autres métiers)
-    local host = IsCraftOpen() and _G.CraftFrame or _G.TradeSkillFrame
+    local host = TS:IsCraftOpen() and _G.CraftFrame or _G.TradeSkillFrame
     self.frame:ClearAllPoints()
     if host then
         local h = host:GetHeight()

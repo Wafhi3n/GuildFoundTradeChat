@@ -3,3 +3,5 @@ ignore:
   - CLAUDE.md
   - .gitignore
   - .pkgmeta
+  - tools
+  - Data/Curated

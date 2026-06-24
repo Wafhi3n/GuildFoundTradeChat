@@ -43,6 +43,8 @@ function TS:Init()
     if not db.manualSellable then db.manualSellable = {} end  -- [itemID] = nom (ajout dropdown)
     if not db.excludedItems  then db.excludedItems  = {} end  -- [itemID] = true (retirés du scan)
     if not db.doneOffers     then db.doneOffers     = {} end  -- ["player_itemID"] = true (traités)
+    if not db.guildRoster    then db.guildRoster    = {} end  -- [player] = { professions={}, lastSeen }
+    if not db.craftOrders    then db.craftOrders    = {} end  -- commandes de craft (cf. Guild)
     if db.scanGuild == nil   then db.scanGuild      = true end
     if db.alertSound == nil  then db.alertSound     = true end
     if db.debugLog == nil    then db.debugLog       = false end
@@ -478,6 +480,12 @@ function TS:GetItemName(itemID, fallback)
     return name or fallback or ("item:" .. itemID)
 end
 
+-- Parse public d'un texte de prix (utilisé par l'UI des commandes).
+-- Retourne priceText, priceValue(cuivre). Délègue au parseur interne ExtractPrice.
+function TS:ParsePrice(text)
+    return ExtractPrice(text or "")
+end
+
 -- Détermine si un itemID est "fournissable" par le joueur, et comment.
 -- Retourne category, profession :
 --   "manual"     = ajouté à la main via le dropdown
@@ -485,6 +493,16 @@ end
 --   "sellable"   = produit listé dans une bdd métier
 --   "disenchant" = mat de désenchantement listé dans une bdd
 -- Retourne nil si inconnu ou explicitement exclu du scan.
+--
+-- Ordre de priorité :
+--   1. "manual"  : le joueur l'a ajouté explicitement → prime sur tout
+--   2. "scan"    : recette indexée lors d'un scan de métier
+--   3. statique  : entrée "sellable" ou "disenchant" dans Data/Professions/*.lua
+--      → les items statiques qui sont AUSSI craftables (baguettes, tiges, huiles)
+--        servent de repli tant que le joueur n'a pas encore scanné ; la bdd statique
+--        couvre surtout les mats de désenchantement qui n'apparaissent pas dans la
+--        liste de crafts (poussières, essences, éclats).
+-- Retourne nil si l'item est dans excludedItems.
 function TS:GetProducible(itemID)
     if not itemID then return nil end
     if self.db and self.db.excludedItems and self.db.excludedItems[itemID] then
@@ -507,16 +525,6 @@ end
 -- Vrai si le joueur peut fournir cet item (toutes catégories confondues)
 function TS:CanSell(itemID)
     return (self:GetProducible(itemID)) ~= nil
-end
-
--- Conservé pour compat : "peut fournir" (toutes sources)
-function TS:CanCraft(itemID)
-    return self:CanSell(itemID)
-end
-
-function TS:GetCraftProfession(itemID)
-    local _, prof = self:GetProducible(itemID)
-    return prof
 end
 
 -- Bascule l'exclusion d'un item du scan (bouton filtre du panneau métier)
@@ -557,6 +565,29 @@ function TS:RecordCraftedItem(itemID, itemName, canonicalProf)
     end
 end
 
+-- Vrai si le CraftFrame (Enchantement/Dressage) est affiché.
+function TS:IsCraftOpen()
+    return CraftFrame and CraftFrame:IsShown()
+end
+
+-- Retourne itemID, link de la recette actuellement sélectionnée
+-- (fonctionne pour l'API Craft comme pour l'API TradeSkill).
+function TS:GetSelectedRecipe()
+    if self:IsCraftOpen() then
+        local idx = GetCraftSelectionIndex and GetCraftSelectionIndex()
+        if idx and idx > 0 and GetCraftItemLink then
+            local link = GetCraftItemLink(idx)
+            if link then return tonumber(link:match("|Hitem:(%d+)")), link end
+        end
+        return nil
+    end
+    local idx = GetTradeSkillSelectionIndex and GetTradeSkillSelectionIndex()
+    if not idx or idx < 1 then return nil end
+    local link = GetTradeSkillItemLink and GetTradeSkillItemLink(idx)
+    if not link then return nil end
+    return tonumber(link:match("|Hitem:(%d+)")), link
+end
+
 -- Lecteur unifié du métier ouvert.
 -- En Classic Era, l'Enchantement (et le Dressage) passent par l'API CRAFT,
 -- pas TradeSkill : GetTradeSkillLine() y renvoie "UNKNOWN".
@@ -580,20 +611,45 @@ function TS:GetOpenProfessionInfo()
     return nil, nil
 end
 
-function TS:ScanCurrentTradeSkill()
-    if not GetTradeSkillLine then return 0, nil end
-    local skillName = GetTradeSkillLine()
+-- Tables décrivant chaque API métier — injectées dans ScanRecipes
+local TRADESKILL_API = {
+    getNum      = function() return (GetNumTradeSkills and GetNumTradeSkills()) or 0 end,
+    getInfo     = function(i) return GetTradeSkillInfo(i) end,           -- name, skillType
+    getLink     = function(i) return GetTradeSkillItemLink(i) end,
+    getSkillName= function() return GetTradeSkillLine and GetTradeSkillLine() end,
+    isHeader    = function(t) return t == "header" or t == "subheader" end,
+}
+local CRAFT_API = {
+    getNum      = function() return (GetNumCrafts and GetNumCrafts()) or 0 end,
+    getInfo     = function(i) return GetCraftInfo(i) end,                -- name, sub, craftType
+    getLink     = function(i) return GetCraftItemLink and GetCraftItemLink(i) end,
+    getSkillName= function() return (GetCraftDisplaySkillLine and GetCraftDisplaySkillLine())
+                                  or (GetCraftName and GetCraftName()) end,
+    isHeader    = function(t) return t == "header" end,
+}
+
+-- Boucle de scan commune, paramétrée par une table d'API (TRADESKILL_API ou CRAFT_API).
+-- Retourne count, canonical (0, nil si le métier est indisponible ou UNKNOWN).
+-- Ne déclenche PAS RefreshCraftStatus — c'est ScanOpenProfession qui le fait une seule fois.
+function TS:ScanRecipes(api)
+    local skillName = api.getSkillName()
     if not skillName or skillName == "" or skillName == "UNKNOWN" then return 0, nil end
     local canonical = self:ResolveProfession(skillName)
 
-    local num   = GetNumTradeSkills and GetNumTradeSkills() or 0
+    local num   = api.getNum()
     local count = 0
 
     for i = 1, num do
-        local recipeName, skillType = GetTradeSkillInfo(i)
-        -- Ignorer les headers de catégorie
-        if recipeName and skillType ~= "header" and skillType ~= "subheader" then
-            local link = GetTradeSkillItemLink(i)
+        -- TradeSkill renvoie (name, skillType) ; Craft renvoie (name, sub, craftType).
+        -- On extraie le type en 2e ou 3e position selon l'API via les wrappers ci-dessus.
+        local name, skillType
+        if api == TRADESKILL_API then
+            name, skillType = api.getInfo(i)
+        else
+            name, _, skillType = api.getInfo(i)
+        end
+        if name and not api.isHeader(skillType) then
+            local link = api.getLink(i)
             if link then
                 local itemID = tonumber(link:match("|Hitem:(%d+)"))
                 if itemID then
@@ -604,54 +660,16 @@ function TS:ScanCurrentTradeSkill()
         end
     end
 
-    -- Mettre à jour le statut canCraft sur les offres existantes
-    if count > 0 then
-        self:RefreshCraftStatus()
-    end
-
     return count, canonical
 end
 
--- Scan via l'API CRAFT (Enchantement en Classic Era)
-function TS:ScanCurrentCraft()
-    if not GetNumCrafts then return 0, nil end
-    local skillName = GetCraftDisplaySkillLine and GetCraftDisplaySkillLine()
-                   or (GetCraftName and GetCraftName())
-    if not skillName or skillName == "" or skillName == "UNKNOWN" then return 0, nil end
-    local canonical = self:ResolveProfession(skillName)
-
-    local num   = GetNumCrafts() or 0
-    local count = 0
-
-    for i = 1, num do
-        local craftName, _, craftType = GetCraftInfo(i)
-        -- Ignorer les en-têtes ; la plupart des enchants n'ont pas de lien d'objet
-        if craftName and craftType ~= "header" then
-            local link = GetCraftItemLink and GetCraftItemLink(i)
-            if link then
-                local itemID = tonumber(link:match("|Hitem:(%d+)"))
-                if itemID then
-                    self:RecordCraftedItem(itemID, link:match("|h%[(.-)%]|h"), canonical)
-                    count = count + 1
-                end
-            end
-        end
-    end
-
-    if count > 0 then
-        self:RefreshCraftStatus()
-    end
-
-    return count, canonical
-end
-
--- Scan du métier ouvert, quel que soit l'API (TradeSkill ou Craft)
+-- Scan du métier ouvert, quel que soit l'API (TradeSkill ou Craft).
+-- Appelle RefreshCraftStatus une seule fois après le scan (point 5).
 function TS:ScanOpenProfession()
     local _, isCraft = self:GetOpenProfessionInfo()
-    if isCraft then
-        return self:ScanCurrentCraft()
-    end
-    return self:ScanCurrentTradeSkill()
+    local count, canonical = self:ScanRecipes(isCraft and CRAFT_API or TRADESKILL_API)
+    if count > 0 then self:RefreshCraftStatus() end
+    return count, canonical
 end
 
 function TS:RefreshCraftStatus()
@@ -798,9 +816,15 @@ eventFrame:RegisterEvent("CRAFT_SHOW")            -- Enchantement (API Craft)
 eventFrame:RegisterEvent("CRAFT_UPDATE")
 eventFrame:RegisterEvent("CRAFT_CLOSE")
 
--- Scan (protégé) + affichage du panneau, commun TradeSkill et Craft
+-- Scan (protégé) + affichage du panneau, commun TradeSkill et Craft.
+-- Anti-rebond : un seul scan en vol à la fois (évite d'empiler les C_Timer.After
+-- lors des rafales d'events TRADE_SKILL_LIST_UPDATE / CRAFT_UPDATE).
+local scanPending = false
 local function HandleProfessionShow()
+    if scanPending then return end
+    scanPending = true
     C_Timer.After(0.3, function()
+        scanPending = false
         local ok, err = pcall(function() TS:ScanOpenProfession() end)
         if not ok then print("|cFFFF4444TS scan error:|r " .. tostring(err)) end
         if TS.ProfPanel then
@@ -826,6 +850,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if TS.Minimap then TS.Minimap:Init() end
         -- Réseau inter-addon
         if TS.Net then TS.Net:Init() end
+        -- Registre guilde + commandes de craft
+        if TS.Guild then TS.Guild:Init() end
         -- Compter les recettes déjà en cache
         local cached = 0
         for _ in pairs(TS.craftedItems or {}) do cached = cached + 1 end
@@ -872,6 +898,23 @@ function TS:HandleSlash(msg)
 
     if cmd == "" then
         if self.UI then self.UI:Toggle() end
+
+    elseif cmd == "order" or cmd == "orders" then
+        if self.OrderPanel then self.OrderPanel:Toggle() end
+
+    elseif cmd == "profs" or cmd == "professions" then
+        -- Diagnostic : mes métiers détectés + roster guilde
+        if self.Guild then
+            local mine = self.Guild.myProfessions or self.Guild:DetectMyProfessions()
+            print("|cFF00CCFFTradeScanner|r Mes métiers : " ..
+                (#mine > 0 and table.concat(mine, ", ") or "|cFF888888aucun|r"))
+            local n = 0
+            for player, info in pairs(self.db.guildRoster) do
+                n = n + 1
+                print(string.format("  |cFFCCCCCC%s|r : %s", player, table.concat(info.professions or {}, ", ")))
+            end
+            if n == 0 then print("  |cFF888888(aucun autre membre connu pour l'instant)|r") end
+        end
 
     elseif cmd == "clear" then
         self.db.offers = {}
@@ -1053,6 +1096,8 @@ function TS:HandleSlash(msg)
     elseif cmd == "help" then
         print("|cFF00CCFFTradeScanner|r --- Help ---")
         print("  /ts                       - open/close window")
+        print("  /ts order                 - ouvre le panneau de commandes de craft (guilde)")
+        print("  /ts profs                 - mes métiers + roster guilde connu")
         print("  /ts clear                 - clear all offers")
         print("  /ts scan                  - scan open profession window")
         print("  /ts sell <shift-clic>     - ajoute/retire un item vendable (manuel)")

@@ -72,6 +72,61 @@ function NET:BroadcastDone(player, itemID)
     self:Send(payload)
 end
 
+-- ------------------------------------------------------------------
+-- Guilde : métiers (PR) + commandes de craft (CO / CC / CA)
+-- ------------------------------------------------------------------
+
+-- Annonce mes métiers : "PR|prof1,prof2,..."
+function NET:BroadcastProfessions(professions)
+    local list = professions or {}
+    self:Send("PR|" .. table.concat(list, ","))
+end
+
+-- Nouvelle commande : "CO|buyer|kind|id|qty|priceValue|priceText|profession|name"
+--   kind = "I" (item, id=itemID) | "E" (enchant, id=spellID, name=libellé)
+function NET:BroadcastOrder(o)
+    if not o then return end
+    local kind = o.enchantID and "E" or "I"
+    local id   = o.enchantID or o.itemID
+    if not id then return end
+    local payload = string.format("CO|%s|%s|%d|%d|%d|%s|%s|%s",
+        o.buyer or "",
+        kind,
+        id,
+        o.qty or 1,
+        o.priceValue or 0,
+        (o.priceText or ""):gsub("|", ""),
+        o.profession or "",
+        (o.enchantName or ""):gsub("|", ""))
+    self:Send(payload)
+end
+
+-- Annulation : "CC|buyer|kind|id"
+function NET:BroadcastCancel(buyer, kind, id)
+    if not buyer or not id then return end
+    self:Send(string.format("CC|%s|%s|%d", buyer, kind or "I", id))
+end
+
+-- Acceptation : "CA|crafter|buyer|kind|id"
+function NET:BroadcastAccept(crafter, buyer, kind, id)
+    if not crafter or not buyer or not id then return end
+    self:Send(string.format("CA|%s|%s|%s|%d", crafter, buyer, kind or "I", id))
+end
+
+-- Envoie toutes les commandes actives staggered (réponse à HI)
+function NET:SendAllOrdersDelayed()
+    local orders = (TS.db and TS.db.craftOrders) or {}
+    local sent = 0
+    C_Timer.NewTicker(OFFER_TICK, function(ticker)
+        if sent >= #orders or sent >= MAX_OFFERS then
+            ticker:Cancel()
+            return
+        end
+        sent = sent + 1
+        if TS.Net then TS.Net:BroadcastOrder(orders[sent]) end
+    end, MAX_OFFERS)
+end
+
 -- ============================================================
 -- RÉCEPTION
 -- ============================================================
@@ -90,8 +145,14 @@ function NET:HandleMessage(senderName, message)
     local cmd = message:match("^([A-Z]+)")
 
     if cmd == "HI" then
-        -- Quelqu'un se co : envoyer nos offres
+        -- Quelqu'un se co : envoyer nos offres, nos commandes et nos métiers
         self:SendAllOffersDelayed()
+        self:SendAllOrdersDelayed()
+        if TS.Guild then
+            -- Si la détection (+2s) n'a pas encore tourné, la forcer immédiatement
+            if not TS.Guild.myProfessions then TS.Guild:DetectMyProfessions() end
+            self:BroadcastProfessions(TS.Guild.myProfessions)
+        end
 
     elseif cmd == "OF" then
         -- Nouvelle offre reçue
@@ -107,7 +168,9 @@ function NET:HandleMessage(senderName, message)
             local timestamp  = tonumber(parts[6]) or time()
             local player     = parts[1]
 
-            -- Construire l'offre
+            -- Construire l'offre (GetProducible appelé une seule fois)
+            local cat, prof
+            if itemID then cat, prof = TS:GetProducible(itemID) end
             local offer = {
                 offerType    = offerType,
                 player       = player,
@@ -118,9 +181,9 @@ function NET:HandleMessage(senderName, message)
                 priceValue   = priceValue,
                 rawMsg       = nil,  -- reconstruction pas possible
                 timestamp    = timestamp,
-                canCraft     = itemID and TS:CanSell(itemID) or false,
-                sellCategory = itemID and select(1, TS:GetProducible(itemID)) or nil,
-                profession   = itemID and select(2, TS:GetProducible(itemID)) or nil,
+                canCraft     = cat ~= nil,
+                sellCategory = cat,
+                profession   = prof,
                 source       = "network",
             }
 
@@ -139,6 +202,56 @@ function NET:HandleMessage(senderName, message)
             if itemID then
                 TS:MarkDone(player, itemID, true)
             end
+        end
+
+    elseif cmd == "PR" then
+        -- Annonce de métiers : "PR|prof1,prof2,..."
+        if TS.Guild then
+            local body = message:match("^PR|(.*)$") or ""
+            local profs = {}
+            for p in body:gmatch("([^,]+)") do profs[#profs + 1] = p end
+            TS.Guild:UpdateRoster(playerShort, profs)
+        end
+
+    elseif cmd == "CO" then
+        -- Nouvelle commande : "CO|buyer|kind|id|qty|priceValue|priceText|profession|name"
+        -- (match positionnel : priceText/profession/name peuvent être vides)
+        local buyer, kind, id, qty, pv, ptext, prof, name =
+            message:match("^CO|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|(.*)$")
+        id = tonumber(id)
+        if TS.Guild and buyer and id then
+            local o = {
+                buyer      = buyer,
+                qty        = tonumber(qty) or 1,
+                priceValue = tonumber(pv) or 0,
+                priceText  = (ptext ~= "" and ptext) or nil,
+                profession = (prof ~= "" and prof) or nil,
+                status     = "open",
+                timestamp  = time(),
+            }
+            if kind == "E" then
+                o.enchantID   = id
+                o.enchantName = (name ~= "" and name) or nil
+            else
+                o.itemID = id
+            end
+            TS.Guild:AddOrder(o, true)
+        end
+
+    elseif cmd == "CC" then
+        -- Annulation : "CC|buyer|kind|id"
+        local buyer, kind, id = message:match("^CC|([^|]+)|([^|]+)|(%d+)")
+        if TS.Guild and buyer and id then
+            local key = (kind == "E" and "e" or "i") .. id
+            TS.Guild:CancelOrder(buyer, key, true)
+        end
+
+    elseif cmd == "CA" then
+        -- Acceptation : "CA|crafter|buyer|kind|id"
+        local crafter, buyer, kind, id = message:match("^CA|([^|]+)|([^|]+)|([^|]+)|(%d+)")
+        if TS.Guild and crafter and buyer and id then
+            local key = (kind == "E" and "e" or "i") .. id
+            TS.Guild:AcceptOrder(buyer, key, true, crafter)
         end
     end
 end

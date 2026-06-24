@@ -36,9 +36,17 @@ end
 --   TS.staticEnchants       = { { profession=, name= }, ... }  (matching texte)
 --   TS.profAliases[loweralias] = profName  (résolution du métier ouvert)
 function TS:LoadStaticData()
-    self.staticItems   = {}
-    self.staticEnchants = {}
-    self.profAliases   = {}
+    self.staticItems        = {}
+    self.staticEnchants     = {}
+    self.profAliases        = {}
+    self.staticByProfession = {}  -- [profCanonical] = { [itemID] = name }  (catalogue items /ts order)
+    self.enchantsByProfession = {}  -- [profCanonical] = { { id=spellID, name= } }  (catalogue enchants)
+
+    local function indexByProf(profName, itemID, name)
+        local bucket = self.staticByProfession[profName]
+        if not bucket then bucket = {}; self.staticByProfession[profName] = bucket end
+        bucket[itemID] = name
+    end
 
     for profName, def in pairs(DATA.professions or {}) do
         -- Alias de noms de métier (pour reconnaître la fenêtre ouverte)
@@ -56,6 +64,7 @@ function TS:LoadStaticData()
                     category   = "sellable",
                     name       = name,
                 }
+                indexByProf(profName, itemID, name)
             end
         end
 
@@ -70,12 +79,20 @@ function TS:LoadStaticData()
         end
 
         if def.enchants then
+            local bucket = self.enchantsByProfession[profName]
+            if not bucket then bucket = {}; self.enchantsByProfession[profName] = bucket end
             for _, ench in ipairs(def.enchants) do
+                -- Rétro-compat : ench peut être une chaîne (ancien format) ou { id, name }.
+                local id   = (type(ench) == "table") and ench.id   or nil
+                local name = (type(ench) == "table") and ench.name or ench
                 table.insert(self.staticEnchants, {
                     profession = profName,
-                    name       = ench,
+                    name       = name,
+                    id         = id,
                 })
+                table.insert(bucket, { id = id, name = name })
             end
+            table.sort(bucket, function(a, b) return a.name < b.name end)
         end
     end
 end
