@@ -3,6 +3,7 @@
 local TS = TradeScanner
 local UI = {}
 TS.UI = UI
+local L  = TS.L
 
 -- ============================================================
 -- CONSTANTES UI
@@ -12,21 +13,23 @@ local FRAME_W   = 700
 local FRAME_H   = 460
 local ROW_H     = 22
 local MAX_ROWS  = 18
+local TAB_W     = 128
 
 local COLUMNS = {
-    { label = "Type",   w = 42,  x = 10  },
-    { label = "Item",   w = 215, x = 56  },
-    { label = "Price",  w = 88,  x = 275 },
-    { label = "Player", w = 115, x = 367 },
-    { label = "Age",    w = 34,  x = 486 },
+    { label = "Type",    w = 42,  x = 10  },
+    { label = "Item",    w = 215, x = 56  },
+    { label = "Price",   w = 88,  x = 275 },
+    { label = "Player",  w = 115, x = 367 },
+    { label = "Age",     w = 34,  x = 486 },
     { label = "Provide", w = 120, x = 524 },
 }
 
 local TABS = {
-    { id = "all",      label = "All"          },
-    { id = "wts",      label = "Sales (WTS)"  },
-    { id = "buy",      label = "Wanted (WTB)" },
-    { id = "sell",     label = "Sellable"     },
+    { id = "all",    label = "All"          },
+    { id = "wts",    label = "Sales (WTS)"  },
+    { id = "buy",    label = "Wanted (WTB)" },
+    { id = "sell",   label = "Sellable"     },
+    { id = "orders", label = "Orders"       },
 }
 
 -- ============================================================
@@ -35,17 +38,10 @@ local TABS = {
 
 local function FormatAge(ts)
     local age = time() - ts
-    if age < 60   then return age .. "s"
+    if age < 60      then return age .. "s"
     elseif age < 3600 then return math.floor(age / 60) .. "m"
-    else               return math.floor(age / 3600) .. "h"
+    else                   return math.floor(age / 3600) .. "h"
     end
-end
-
-local function MakeBackground(frame, r, g, b, a)
-    local bg = frame:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(r, g, b, a or 1)
-    return bg
 end
 
 local function MakeSeparator(parent, offsetY)
@@ -58,213 +54,163 @@ local function MakeSeparator(parent, offsetY)
 end
 
 -- ============================================================
--- CONSTRUCTION DE LA FENÊTRE PRINCIPALE
+-- BUILD SUB-METHODS
 -- ============================================================
 
-function UI:Build()
-    if self.frame then return end
-
-    local f = CreateFrame("Frame", "TradeScannerMainFrame", UIParent, "BackdropTemplate")
-    f:SetSize(FRAME_W, FRAME_H)
-    f:SetPoint("CENTER")
-    f:SetMovable(true)
-    f:EnableMouse(true)
-    f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", f.StartMoving)
-    f:SetScript("OnDragStop",  f.StopMovingOrSizing)
-    f:SetClampedToScreen(true)
-    f:SetFrameStrata("MEDIUM")
-    f:SetFrameLevel(10)
-    f:Hide()
-
-    f:SetBackdrop({
-        bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 16,
-        insets   = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-    f:SetBackdropColor(0.05, 0.05, 0.09, 0.96)
-    f:SetBackdropBorderColor(0.35, 0.35, 0.5, 1)
-
-    -- Titre
+function UI:_BuildTitleBar(f)
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -10)
-    title:SetText("|cFF00CCFFTradeScanner|r")
-
-    -- Current channel label
+    title:SetText("|cFF00CCFFGuild Economy|r")
     local chanLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     chanLabel:SetPoint("TOP", 0, -28)
     chanLabel:SetTextColor(0.55, 0.55, 0.55)
     self.chanLabel = chanLabel
-
-    -- Bouton fermer
     local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     closeBtn:SetPoint("TOPRIGHT", -2, -2)
     closeBtn:SetScript("OnClick", function() f:Hide() end)
-
-    -- Champ de recherche (filtre par nom d'item / joueur, toutes langues)
     local searchLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     searchLabel:SetPoint("TOPRIGHT", -180, -14)
     searchLabel:SetText("|cFFAAAAAAFilter|r")
-
     local searchBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
     searchBox:SetSize(120, 18)
     searchBox:SetPoint("TOPRIGHT", -36, -10)
     searchBox:SetAutoFocus(false)
-    searchBox:SetScript("OnTextChanged", function(box)
-        UI.searchText = box:GetText()
-        UI:Refresh()
-    end)
-    searchBox:SetScript("OnEscapePressed", function(box)
-        box:SetText("")
-        box:ClearFocus()
-    end)
+    searchBox:SetScript("OnTextChanged", function(box) UI.searchText = box:GetText(); UI:Refresh() end)
+    searchBox:SetScript("OnEscapePressed", function(box) box:SetText(""); box:ClearFocus() end)
     self.searchBox = searchBox
+end
 
-    -- ---- ONGLETS ----
+function UI:_BuildTabButtons(f)
     self.tabBtns = {}
     for i, tabDef in ipairs(TABS) do
-        local btn = self:BuildTabButton(f, tabDef, i)
-        self.tabBtns[tabDef.id] = btn
+        self.tabBtns[tabDef.id] = self:BuildTabButton(f, tabDef, i)
     end
+end
 
-    MakeSeparator(f, -70)
-
-    -- ---- EN-TÊTES DE COLONNES ----
+function UI:_BuildOffersPane(f)
+    local pane = CreateFrame("Frame", nil, f)
+    pane:SetPoint("TOPLEFT",     0, -70)
+    pane:SetPoint("BOTTOMRIGHT", 0,   0)
+    self.offersPane = pane
+    MakeSeparator(pane, 0)
     for _, col in ipairs(COLUMNS) do
-        local fs = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        fs:SetPoint("TOPLEFT", col.x, -76)
+        local fs = pane:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        fs:SetPoint("TOPLEFT", col.x, -6)
         fs:SetWidth(col.w)
         fs:SetJustifyH("LEFT")
         fs:SetText("|cFFAAAAAA" .. col.label .. "|r")
     end
+    MakeSeparator(pane, -22)
+    self:_BuildScrollRows(pane)
+    self:_BuildSellManagement(pane)
+end
 
-    MakeSeparator(f, -92)
+function UI:_BuildOrdersPane(f)
+    local pane = CreateFrame("Frame", nil, f)
+    pane:SetPoint("TOPLEFT",     0, -70)
+    pane:SetPoint("BOTTOMRIGHT", 0,   0)
+    pane:Hide()
+    self.ordersPane = pane
+    if TS.OrderPanel then TS.OrderPanel:BuildEmbed(pane) end
+end
 
-    -- ---- SCROLL FRAME ----
-    local scrollFrame = CreateFrame(
-        "ScrollFrame", "TradeScannerScroll", f, "UIPanelScrollFrameTemplate"
-    )
-    scrollFrame:SetPoint("TOPLEFT",     4,  -96)
+function UI:_BuildScrollRows(pane)
+    local scrollFrame = CreateFrame("ScrollFrame", "TradeScannerScroll", pane, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT",     4,  -26)
     scrollFrame:SetPoint("BOTTOMRIGHT", -26, 62)
-
     local content = CreateFrame("Frame", nil, scrollFrame)
     content:SetWidth(FRAME_W - 32)
-    content:SetHeight(MAX_ROWS * ROW_H * 4)  -- assez grand pour scroller
+    content:SetHeight(MAX_ROWS * ROW_H * 4)
     scrollFrame:SetScrollChild(content)
-
     self.scrollFrame = scrollFrame
     self.content     = content
-
-    -- Pool de lignes
     self.rows = {}
-    for i = 1, MAX_ROWS * 3 do
-        self.rows[i] = self:BuildRow(content, i)
-    end
-
-    MakeSeparator(f, -(FRAME_H - 60))
-
-    -- ---- BARRE DE STATUT ----
-    local statusText = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    for i = 1, MAX_ROWS * 3 do self.rows[i] = self:BuildRow(content, i) end
+    MakeSeparator(pane, -(FRAME_H - 60 - 70))
+    local statusText = pane:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     statusText:SetPoint("BOTTOMLEFT", 8, 36)
     statusText:SetTextColor(0.55, 0.55, 0.55)
     self.statusText = statusText
+end
 
-    -- ---- GESTION DU VENDABLE MANUEL (dropdown + ajout) ----
-    local sellLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    sellLabel:SetPoint("BOTTOMLEFT", 8, 11)
-    sellLabel:SetText("|cFF88FF88Sell+|r")
-
-    -- EditBox: accepte le shift-clic d'un objet (insère le lien) ou un itemID
-    local addBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
-    addBox:SetSize(180, 18)
-    addBox:SetPoint("BOTTOMLEFT", 52, 10)
-    addBox:SetAutoFocus(false)
+function UI:_BuildSellManagement(pane)
+    local sellLabel = pane:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    sellLabel:SetPoint("BOTTOMLEFT", 8, 11); sellLabel:SetText("|cFF88FF88Sell+|r")
+    local addBox = CreateFrame("EditBox", nil, pane, "InputBoxTemplate")
+    addBox:SetSize(180, 18); addBox:SetPoint("BOTTOMLEFT", 52, 10); addBox:SetAutoFocus(false)
     addBox:SetScript("OnEscapePressed", function(box) box:SetText(""); box:ClearFocus() end)
     self.addBox = addBox
-
     local function DoAddSellable()
-        local txt = addBox:GetText() or ""
+        local txt    = addBox:GetText() or ""
         local itemID = tonumber(txt:match("|Hitem:(%d+)")) or tonumber(txt:match("^%s*(%d+)%s*$"))
         if itemID then
-            TS:AddManualSellable(itemID)
-            addBox:SetText("")
-            addBox:ClearFocus()
+            TS:AddManualSellable(itemID); addBox:SetText(""); addBox:ClearFocus()
             UI:Refresh()
-            print("|cFF00CCFFTradeScanner|r Vendable +: " .. TS:GetItemName(itemID))
+            print("|cFF00CCFFGuild Economy|r " .. L["Sellable+: "] .. TS:GetItemName(itemID))
         else
-            print("|cFF00CCFFTradeScanner|r Shift-clic un objet dans le champ, ou tape un itemID.")
+            print("|cFF00CCFFGuild Economy|r " .. L["Shift-click an item or enter an item ID."])
         end
     end
     addBox:SetScript("OnEnterPressed", DoAddSellable)
-
-    local addBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    addBtn:SetSize(50, 22)
-    addBtn:SetPoint("LEFT", addBox, "RIGHT", 4, 0)
-    addBtn:SetText("Add")
-    addBtn:SetScript("OnClick", DoAddSellable)
-
-    -- Dropdown "Manage": liste les items vendables manuels, retire au clic
-    local manageDrop = CreateFrame("Frame", "TradeScannerManageDrop", f, "UIDropDownMenuTemplate")
+    local addBtn = CreateFrame("Button", nil, pane, "UIPanelButtonTemplate")
+    addBtn:SetSize(50, 22); addBtn:SetPoint("LEFT", addBox, "RIGHT", 4, 0)
+    addBtn:SetText("Add"); addBtn:SetScript("OnClick", DoAddSellable)
+    local manageDrop = CreateFrame("Frame", "TradeScannerManageDrop", pane, "UIDropDownMenuTemplate")
     manageDrop:SetPoint("LEFT", addBtn, "RIGHT", -6, -2)
-    UIDropDownMenu_SetWidth(manageDrop, 90)
-    UIDropDownMenu_SetText(manageDrop, "Manage")
+    UIDropDownMenu_SetWidth(manageDrop, 90); UIDropDownMenu_SetText(manageDrop, "Manage")
     UIDropDownMenu_Initialize(manageDrop, function(_, level)
         local info = UIDropDownMenu_CreateInfo()
-        info.isTitle = true
-        info.text = "Vendable manuel (clic = retirer)"
-        info.notCheckable = true
+        info.isTitle = true; info.text = L["Manual sellable (click to remove)"]; info.notCheckable = true
         UIDropDownMenu_AddButton(info, level)
         local any = false
         for itemID in pairs(TS.db.manualSellable or {}) do
             any = true
             local info2 = UIDropDownMenu_CreateInfo()
-            info2.text = TS:GetItemName(itemID)
-            info2.notCheckable = true
-            info2.func = function()
-                TS:RemoveManualSellable(itemID)
-                UI:Refresh()
-                CloseDropDownMenus()
-            end
+            info2.text = TS:GetItemName(itemID); info2.notCheckable = true
+            info2.func = function() TS:RemoveManualSellable(itemID); UI:Refresh(); CloseDropDownMenus() end
             UIDropDownMenu_AddButton(info2, level)
         end
         if not any then
             local info3 = UIDropDownMenu_CreateInfo()
-            info3.text = "|cFF888888(vide)|r"
-            info3.notCheckable = true
-            info3.disabled = true
+            info3.text = "|cFF888888" .. L["(empty)"] .. "|r"; info3.notCheckable = true; info3.disabled = true
             UIDropDownMenu_AddButton(info3, level)
         end
     end)
     self.manageDrop = manageDrop
+    local refreshBtn = CreateFrame("Button", nil, pane, "UIPanelButtonTemplate")
+    refreshBtn:SetSize(90, 22); refreshBtn:SetPoint("BOTTOMRIGHT", -28, 8)
+    refreshBtn:SetText("Refresh"); refreshBtn:SetScript("OnClick", function() UI:Refresh() end)
+    local clearBtn = CreateFrame("Button", nil, pane, "UIPanelButtonTemplate")
+    clearBtn:SetSize(70, 22); clearBtn:SetPoint("BOTTOMRIGHT", -122, 8)
+    clearBtn:SetText("Clear"); clearBtn:SetScript("OnClick", function() TS.db.offers = {}; UI:Refresh() end)
+end
 
-    -- Refresh button
-    local refreshBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    refreshBtn:SetSize(90, 22)
-    refreshBtn:SetPoint("BOTTOMRIGHT", -28, 8)
-    refreshBtn:SetText("Refresh")
-    refreshBtn:SetScript("OnClick", function() UI:Refresh() end)
+-- ============================================================
+-- CONSTRUCTION DE LA FENÊTRE PRINCIPALE
+-- ============================================================
 
-    -- Clear button
-    local clearBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    clearBtn:SetSize(70, 22)
-    clearBtn:SetPoint("BOTTOMRIGHT", -122, 8)
-    clearBtn:SetText("Clear")
-    clearBtn:SetScript("OnClick", function()
-        TS.db.offers = {}
-        UI:Refresh()
-    end)
-
+function UI:Build()
+    if self.frame then return end
+    local f = CreateFrame("Frame", "TradeScannerMainFrame", UIParent, "BackdropTemplate")
+    f:SetSize(FRAME_W, FRAME_H); f:SetPoint("CENTER")
+    f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving); f:SetScript("OnDragStop", f.StopMovingOrSizing)
+    f:SetClampedToScreen(true); f:SetFrameStrata("MEDIUM"); f:SetFrameLevel(10); f:Hide()
+    f:SetBackdrop({
+        bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 16, insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    f:SetBackdropColor(0.05, 0.05, 0.09, 0.96)
+    f:SetBackdropBorderColor(0.35, 0.35, 0.5, 1)
+    self:_BuildTitleBar(f)
+    self:_BuildTabButtons(f)
+    self:_BuildOffersPane(f)
+    self:_BuildOrdersPane(f)
     self.frame = f
-
-    -- Activer l'onglet par défaut
     self:SetTab("all")
-
-    -- Ticker de rafraîchissement automatique (toutes les 10s)
     C_Timer.NewTicker(10, function()
-        if UI.frame and UI.frame:IsShown() then
-            UI:Refresh()
-        end
+        if UI.frame and UI.frame:IsShown() then UI:Refresh() end
     end)
 end
 
@@ -273,37 +219,27 @@ end
 -- ============================================================
 
 function UI:BuildTabButton(parent, tabDef, index)
-    local tabW = 160
+    local tabW = TAB_W
     local tabH = 22
     local btn  = CreateFrame("Button", nil, parent)
     btn:SetSize(tabW, tabH)
     btn:SetPoint("TOPLEFT", 8 + (index - 1) * (tabW + 4), -48)
-
     local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(0.12, 0.12, 0.18, 0.9)
+    bg:SetAllPoints(); bg:SetColorTexture(0.12, 0.12, 0.18, 0.9)
     btn.bg = bg
-
     local txt = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    txt:SetAllPoints()
-    txt:SetText(tabDef.label)
-    txt:SetTextColor(0.7, 0.7, 0.7)
+    txt:SetAllPoints(); txt:SetText(tabDef.label); txt:SetTextColor(0.7, 0.7, 0.7)
     btn.txt = txt
-
     btn.tabID = tabDef.id
-    btn:SetScript("OnClick",  function(b) UI:SetTab(b.tabID) end)
-    btn:SetScript("OnEnter",  function(b)
+    btn:SetScript("OnClick", function(b) UI:SetTab(b.tabID) end)
+    btn:SetScript("OnEnter", function(b)
+        if UI.activeTab ~= b.tabID then b.bg:SetColorTexture(0.2, 0.2, 0.3, 0.9) end
+    end)
+    btn:SetScript("OnLeave", function(b)
         if UI.activeTab ~= b.tabID then
-            b.bg:SetColorTexture(0.2, 0.2, 0.3, 0.9)
+            b.bg:SetColorTexture(0.12, 0.12, 0.18, 0.9); b.txt:SetTextColor(0.7, 0.7, 0.7)
         end
     end)
-    btn:SetScript("OnLeave",  function(b)
-        if UI.activeTab ~= b.tabID then
-            b.bg:SetColorTexture(0.12, 0.12, 0.18, 0.9)
-            b.txt:SetTextColor(0.7, 0.7, 0.7)
-        end
-    end)
-
     return btn
 end
 
@@ -311,192 +247,104 @@ function UI:SetTab(tabID)
     self.activeTab = tabID
     for id, btn in pairs(self.tabBtns) do
         if id == tabID then
-            btn.bg:SetColorTexture(0.15, 0.35, 0.65, 0.95)
-            btn.txt:SetTextColor(1, 1, 1)
+            btn.bg:SetColorTexture(0.15, 0.35, 0.65, 0.95); btn.txt:SetTextColor(1, 1, 1)
         else
-            btn.bg:SetColorTexture(0.12, 0.12, 0.18, 0.9)
-            btn.txt:SetTextColor(0.7, 0.7, 0.7)
+            btn.bg:SetColorTexture(0.12, 0.12, 0.18, 0.9); btn.txt:SetTextColor(0.7, 0.7, 0.7)
         end
     end
-    -- L'utilisateur consulte les demandes qu'il peut fournir : on efface l'alerte minimap
-    if tabID == "sell" and TS.Minimap then
-        TS.Minimap:SetAlert(false)
-    end
+    local isOrders = (tabID == "orders")
+    if self.offersPane then self.offersPane:SetShown(not isOrders) end
+    if self.ordersPane then self.ordersPane:SetShown(isOrders) end
+    if tabID == "sell" and TS.Minimap then TS.Minimap:SetAlert(false) end
     self:Refresh()
 end
 
 -- ============================================================
--- LIGNES DU TABLEAU
+-- REFRESH SUB-METHODS
 -- ============================================================
 
-function UI:BuildRow(parent, index)
-    local row = CreateFrame("Button", nil, parent)
-    row:SetSize(FRAME_W - 32, ROW_H)
-    row:SetPoint("TOPLEFT", 0, -(index - 1) * ROW_H)
-
-    -- Fond alterné
-    local bg = row:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    if index % 2 == 0 then
-        bg:SetColorTexture(0.09, 0.09, 0.13, 0.7)
-    else
-        bg:SetColorTexture(0.05, 0.05, 0.09, 0.5)
+function UI:_GetActiveOffers()
+    local tab = self.activeTab or "all"
+    local offers
+    if     tab == "all"  then offers = TS:GetOffers(nil,    false)
+    elseif tab == "wts"  then offers = TS:GetOffers("sell", false)
+    elseif tab == "buy"  then offers = TS:GetOffers("buy",  false)
+    elseif tab == "sell" then offers = TS:GetSellableOffers()
     end
-
-    -- Survol
-    local hi = row:CreateTexture(nil, "HIGHLIGHT")
-    hi:SetAllPoints()
-    hi:SetColorTexture(0.25, 0.45, 0.85, 0.25)
-
-    -- Barre gauche "craftable" (or)
-    local craftBar = row:CreateTexture(nil, "ARTWORK")
-    craftBar:SetWidth(3)
-    craftBar:SetPoint("TOPLEFT")
-    craftBar:SetPoint("BOTTOMLEFT")
-    craftBar:SetColorTexture(1, 0.78, 0, 1)
-    craftBar:Hide()
-    row.craftBar = craftBar
-
-    -- Type (WTS / WTB)
-    local typeFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    typeFS:SetPoint("LEFT", COLUMNS[1].x, 0)
-    typeFS:SetWidth(COLUMNS[1].w)
-    typeFS:SetJustifyH("CENTER")
-    row.typeFS = typeFS
-
-    -- Item
-    local itemFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    itemFS:SetPoint("LEFT", COLUMNS[2].x, 0)
-    itemFS:SetWidth(COLUMNS[2].w)
-    itemFS:SetJustifyH("LEFT")
-    itemFS:SetWordWrap(false)
-    row.itemFS = itemFS
-
-    -- Prix
-    local priceFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    priceFS:SetPoint("LEFT", COLUMNS[3].x, 0)
-    priceFS:SetWidth(COLUMNS[3].w)
-    priceFS:SetJustifyH("LEFT")
-    priceFS:SetTextColor(1, 0.88, 0.1)
-    row.priceFS = priceFS
-
-    -- Joueur
-    local playerFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    playerFS:SetPoint("LEFT", COLUMNS[4].x, 0)
-    playerFS:SetWidth(COLUMNS[4].w)
-    playerFS:SetJustifyH("LEFT")
-    playerFS:SetTextColor(0.85, 0.85, 0.85)
-    row.playerFS = playerFS
-
-    -- Âge
-    local ageFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    ageFS:SetPoint("LEFT", COLUMNS[5].x, 0)
-    ageFS:SetWidth(COLUMNS[5].w)
-    ageFS:SetJustifyH("CENTER")
-    ageFS:SetTextColor(0.5, 0.5, 0.5)
-    row.ageFS = ageFS
-
-    -- Métier craftable
-    local craftFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    craftFS:SetPoint("LEFT", COLUMNS[6].x, 0)
-    craftFS:SetWidth(COLUMNS[6].w)
-    craftFS:SetJustifyH("LEFT")
-    craftFS:SetTextColor(1, 0.78, 0)
-    row.craftFS = craftFS
-
-    -- Bouton "Done" (marquer comme traité) — icône simple ✓, pas de tooltip
-    local doneBtn = CreateFrame("Button", nil, row)
-    doneBtn:SetSize(16, 16)
-    doneBtn:SetPoint("RIGHT", -26, 0)
-    local doneIcon = doneBtn:CreateTexture(nil, "ARTWORK")
-    doneIcon:SetAllPoints()
-    doneIcon:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
-    doneBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
-    doneBtn:SetScript("OnClick", function()
-        if row.offer and row.offer.player and row.offer.itemID then
-            TS:MarkDone(row.offer.player, row.offer.itemID, false)
+    if not (self.searchText and self.searchText ~= "") then return offers end
+    local needle   = self.searchText:lower()
+    local filtered = {}
+    for _, offer in ipairs(offers) do
+        local label = (offer.itemID and TS:GetItemName(offer.itemID, offer.itemName))
+                      or offer.itemName or offer.rawMsg or ""
+        if label:lower():find(needle, 1, true)
+           or (offer.player and offer.player:lower():find(needle, 1, true)) then
+            table.insert(filtered, offer)
         end
-    end)
-    doneBtn:Hide()
-    row.doneBtn = doneBtn
+    end
+    return filtered
+end
 
-    -- Bouton whisper (icône lettre)
-    local wBtn = CreateFrame("Button", nil, row)
-    wBtn:SetSize(16, 16)
-    wBtn:SetPoint("RIGHT", -6, 0)
-    local wIcon = wBtn:CreateTexture(nil, "ARTWORK")
-    wIcon:SetAllPoints()
-    wIcon:SetTexture("Interface\\GossipFrame\\PetitionGossipIcon")
-    wBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
-    wBtn:SetScript("OnEnter", function()
-        GameTooltip:SetOwner(wBtn, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Whisper " .. (row.offer and row.offer.player or "?"))
-        GameTooltip:Show()
-    end)
-    wBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    wBtn:SetScript("OnClick", function()
-        if row.offer and row.offer.player then
-            ChatFrame_OpenChat("/w " .. row.offer.player .. " ")
-        end
-    end)
-    wBtn:Hide()
-    row.wBtn = wBtn
-
-    -- Tooltip on hover — use the full item link to get suffix stats (e.g. "of the Bear")
-    row:SetScript("OnEnter", function(r)
-        if not r.offer then return end
-        GameTooltip:SetOwner(r, "ANCHOR_CURSOR")
-        GameTooltip:ClearLines()
-
-        if r.offer.itemLink then
-            -- Extract the full hyperlink content (includes enchant/suffix IDs)
-            -- e.g. "item:12345:0:0:0:0:0:-7:0:60" from "|Hitem:12345:...|h[Name]|h"
-            local hyperlink = r.offer.itemLink:match("|H([^|]+)|h")
-            if hyperlink then
-                pcall(GameTooltip.SetHyperlink, GameTooltip, hyperlink)
-            end
-        elseif r.offer.itemID then
-            pcall(GameTooltip.SetHyperlink, GameTooltip, "item:" .. r.offer.itemID)
+function UI:_FillRow(row, offer)
+    row.offer = offer
+    local srcTag = (offer.source == "guild") and "|cFFFFAA00[G]|r " or ""
+    if offer.offerType == "sell" then row.typeFS:SetText(srcTag .. "|cFF33DD33WTS|r")
+    else                              row.typeFS:SetText(srcTag .. "|cFF33AAFFWTB|r") end
+    if offer.itemLink then
+        row.itemFS:SetText(offer.itemLink)
+    elseif offer.itemName then
+        row.itemFS:SetText(offer.itemName)
+    else
+        local raw = offer.rawMsg or ""
+        if #raw > 38 then raw = raw:sub(1, 38) .. "…" end
+        row.itemFS:SetText("|cFF888888" .. raw .. "|r")
+    end
+    if offer.priceText then
+        local px = offer.priceText
+        if offer.qtyText then px = px .. " |cFF888888" .. offer.qtyText .. "|r" end
+        row.priceFS:SetText(px)
+    elseif offer.qtyText then
+        row.priceFS:SetText("|cFF888888" .. offer.qtyText .. "|r")
+    else
+        row.priceFS:SetText("|cFF555555—|r")
+    end
+    row.playerFS:SetText(offer.player or "?")
+    row.ageFS:SetText(FormatAge(offer.timestamp))
+    if offer.canCraft then
+        row.craftBar:Show()
+        if offer.sellCategory == "disenchant" then
+            row.craftBar:SetColorTexture(0.4, 0.8, 1, 1)
+            row.craftFS:SetText("|cFF66CCFFDE|r " .. (offer.profession or ""))
+        elseif offer.sellCategory == "manual" then
+            row.craftBar:SetColorTexture(0.6, 1, 0.6, 1)
+            row.craftFS:SetText("|cFF88FF88" .. (offer.profession or "Manuel") .. "|r")
         else
-            GameTooltip:AddLine(r.offer.rawMsg or "", 1, 1, 1, true)
+            row.craftBar:SetColorTexture(1, 0.78, 0, 1)
+            row.craftFS:SetText(offer.profession or "")
         end
+    else
+        row.craftBar:Hide(); row.craftFS:SetText("")
+    end
+    row.wBtn:Hide()
+    row:Show()
+end
 
-        GameTooltip:AddLine(" ")
-        local typeLabel = r.offer.offerType == "sell" and "Sale" or "Wanted"
-        local srcLabel  = r.offer.source == "guild" and " |cFFFFAA00[Guild]|r" or " |cFF00CCFF[Channel]|r"
-        GameTooltip:AddLine(typeLabel .. srcLabel .. " by |cFFFFFFFF" .. (r.offer.player or "?") .. "|r")
-
-        if r.offer.priceText then
-            GameTooltip:AddLine("Price: |cFFFFDD00" .. r.offer.priceText .. "|r")
-        end
-
-        if r.offer.canCraft then
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("|cFFFFCC00You can craft this item!|r")
-            GameTooltip:AddLine("Profession: " .. (r.offer.profession or "?"), 1, 0.78, 0)
-        end
-
-        GameTooltip:AddLine("|cFF888888Left-click to whisper|r")
-        GameTooltip:Show()
-        if r.doneBtn then r.doneBtn:Show() end
-        if r.wBtn then r.wBtn:Show() end
-    end)
-
-    row:SetScript("OnLeave", function(r)
-        GameTooltip:Hide()
-        if r.doneBtn then r.doneBtn:Hide() end
-        if r.wBtn then r.wBtn:Hide() end
-    end)
-
-    -- Clic gauche = whisper
-    row:SetScript("OnClick", function(r)
-        if r.offer and r.offer.player then
-            ChatFrame_OpenChat("/w " .. r.offer.player .. " ")
-        end
-    end)
-
-    row:Hide()
-    return row
+function UI:_UpdateStatus(totalAll, totalSell, profCount)
+    if self.tabBtns and self.tabBtns["sell"] then
+        local btn = self.tabBtns["sell"]
+        if totalSell > 0 then btn.txt:SetText(string.format("|cFFFFCC00Sellable (%d)|r", totalSell))
+        else                  btn.txt:SetText("Sellable") end
+    end
+    if self.statusText then
+        local guildState = (TS.db and TS.db.scanGuild)
+            and "|cFF33DD33/g ON|r" or "|cFFFF4444/g OFF|r"
+        self.statusText:SetText(string.format(
+            "%d offers  |  |cFFFFCC00%d WTB sellable|r  |  Channel: |cFF00CCFF%s|r  |  %s  |  %d profession(s)",
+            totalAll, totalSell, TS.db and TS.db.channel or "?", guildState, profCount))
+    end
+    if self.chanLabel and TS.db then
+        self.chanLabel:SetText("Watching: |cFF00CCFF#" .. TS.db.channel .. "|r")
+    end
 end
 
 -- ============================================================
@@ -505,136 +353,24 @@ end
 
 function UI:Refresh()
     if not self.frame then return end
-
+    if self.activeTab == "orders" then
+        if TS.OrderPanel then TS.OrderPanel:RefreshEmbed() end
+        return
+    end
     TS:ClearExpired()
-
-    -- Récupérer les offres selon l'onglet actif
-    local tab    = self.activeTab or "all"
-    local offers
-
-    if tab == "all"   then offers = TS:GetOffers(nil,    false)
-    elseif tab == "wts"   then offers = TS:GetOffers("sell", false)
-    elseif tab == "buy"   then offers = TS:GetOffers("buy",  false)
-    elseif tab == "sell"  then offers = TS:GetSellableOffers()       -- WTB qu'on peut fournir
-    end
-
-    -- Filtre de recherche (par nom d'item, toutes langues via le texte affiché)
-    if self.searchText and self.searchText ~= "" then
-        local needle = self.searchText:lower()
-        local filtered = {}
-        for _, offer in ipairs(offers) do
-            local label = (offer.itemID and TS:GetItemName(offer.itemID, offer.itemName))
-                          or offer.itemName or offer.rawMsg or ""
-            if label:lower():find(needle, 1, true)
-               or (offer.player and offer.player:lower():find(needle, 1, true)) then
-                table.insert(filtered, offer)
-            end
-        end
-        offers = filtered
-    end
-
-    -- Masquer toutes les lignes
+    local offers = self:_GetActiveOffers()
     for _, row in ipairs(self.rows) do
-        row:Hide()
-        row.offer = nil
+        row:Hide(); row.offer = nil
         if row.doneBtn then row.doneBtn:Hide() end
-        if row.wBtn then row.wBtn:Hide() end
+        if row.wBtn    then row.wBtn:Hide()    end
     end
-
     local count = math.min(#offers, #self.rows)
-
-    for i = 1, count do
-        local offer = offers[i]
-        local row   = self.rows[i]
-        row.offer   = offer
-
-        -- Type badge + source (channel or guild)
-        local srcTag = (offer.source == "guild") and "|cFFFFAA00[G]|r " or ""
-        if offer.offerType == "sell" then
-            row.typeFS:SetText(srcTag .. "|cFF33DD33WTS|r")
-        else
-            row.typeFS:SetText(srcTag .. "|cFF33AAFFWTB|r")
-        end
-
-        -- Item (avec couleur de qualité si lien disponible)
-        if offer.itemLink then
-            row.itemFS:SetText(offer.itemLink)
-        elseif offer.itemName then
-            row.itemFS:SetText(offer.itemName)
-        else
-            local raw = offer.rawMsg or ""
-            if #raw > 38 then raw = raw:sub(1, 38) .. "…" end
-            row.itemFS:SetText("|cFF888888" .. raw .. "|r")
-        end
-
-        -- Prix (+ quantité/unité si détectée : "60s /stack", "11g x5", …)
-        if offer.priceText then
-            local px = offer.priceText
-            if offer.qtyText then px = px .. " |cFF888888" .. offer.qtyText .. "|r" end
-            row.priceFS:SetText(px)
-        elseif offer.qtyText then
-            row.priceFS:SetText("|cFF888888" .. offer.qtyText .. "|r")
-        else
-            row.priceFS:SetText("|cFF555555—|r")
-        end
-
-        -- Joueur
-        row.playerFS:SetText(offer.player or "?")
-
-        -- Âge
-        row.ageFS:SetText(FormatAge(offer.timestamp))
-
-        -- Surlignage "fournissable" + catégorie
-        if offer.canCraft then
-            row.craftBar:Show()
-            if offer.sellCategory == "disenchant" then
-                row.craftBar:SetColorTexture(0.4, 0.8, 1, 1)  -- cyan = désenchantement
-                row.craftFS:SetText("|cFF66CCFFDE|r " .. (offer.profession or ""))
-            elseif offer.sellCategory == "manual" then
-                row.craftBar:SetColorTexture(0.6, 1, 0.6, 1)  -- vert = manuel
-                row.craftFS:SetText("|cFF88FF88" .. (offer.profession or "Manuel") .. "|r")
-            else
-                row.craftBar:SetColorTexture(1, 0.78, 0, 1)   -- or = craft
-                row.craftFS:SetText(offer.profession or "")
-            end
-        else
-            row.craftBar:Hide()
-            row.craftFS:SetText("")
-        end
-
-        row.wBtn:Hide()
-        row:Show()
-    end
-
-    -- Barre de statut + label onglet Sellable
-    local totalAll   = #TS:GetOffers(nil, false)
-    local totalSell  = #TS:GetSellableOffers()
-    local profCount  = 0
+    for i = 1, count do self:_FillRow(self.rows[i], offers[i]) end
+    local totalAll  = #TS:GetOffers(nil, false)
+    local totalSell = #TS:GetSellableOffers()
+    local profCount = 0
     for _ in pairs(TS:GetCraftedProfessions()) do profCount = profCount + 1 end
-
-    -- Met à jour le label de l'onglet Sellable avec le compteur
-    if self.tabBtns and self.tabBtns["sell"] then
-        local btn = self.tabBtns["sell"]
-        if totalSell > 0 then
-            btn.txt:SetText(string.format("|cFFFFCC00Sellable (%d)|r", totalSell))
-        else
-            btn.txt:SetText("Sellable")
-        end
-    end
-
-    if self.statusText then
-        local guildState = (TS.db and TS.db.scanGuild)
-            and "|cFF33DD33/g ON|r" or "|cFFFF4444/g OFF|r"
-        self.statusText:SetText(string.format(
-            "%d offers  |  |cFFFFCC00%d WTB sellable|r  |  Channel: |cFF00CCFF%s|r  |  %s  |  %d profession(s)",
-            totalAll, totalSell, TS.db and TS.db.channel or "?", guildState, profCount
-        ))
-    end
-
-    -- Libellé canal dans le titre
-    if self.chanLabel and TS.db then
-        self.chanLabel:SetText("Watching: |cFF00CCFF#" .. TS.db.channel .. "|r")
-    end
+    self:_UpdateStatus(totalAll, totalSell, profCount)
 end
 
 -- ============================================================
@@ -643,13 +379,8 @@ end
 
 function UI:Toggle()
     if not self.frame then self:Build() end
-
-    if self.frame:IsShown() then
-        self.frame:Hide()
-    else
-        self:Refresh()
-        self.frame:Show()
-    end
+    if self.frame:IsShown() then self.frame:Hide()
+    else self:Refresh(); self.frame:Show() end
 end
 
 function UI:Show()

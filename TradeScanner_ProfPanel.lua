@@ -9,6 +9,7 @@
 local TS = TradeScanner
 local PP = {}
 TS.ProfPanel = PP
+local L  = TS.L
 
 local PANEL_W   = 270
 local ROW_H     = 18
@@ -27,6 +28,52 @@ end
 -- ------------------------------------------------------------------
 -- Construction du panneau
 -- ------------------------------------------------------------------
+
+function PP:_BuildScanBtn(f)
+    local scanBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    scanBtn:SetSize(70, 20)
+    scanBtn:SetPoint("TOPLEFT", 8, -28)
+    scanBtn:SetText("Scan")
+    scanBtn:SetScript("OnClick", function()
+        local count, prof = TS:ScanOpenProfession()
+        if prof then
+            print("|cFF00CCFFGuild Economy|r " .. string.format(L["%s: %d recipes indexed."], prof, count))
+        end
+        PP:Refresh()
+    end)
+    scanBtn:SetScript("OnEnter", function(b)
+        GameTooltip:SetOwner(b, "ANCHOR_TOP")
+        GameTooltip:SetText(L["Re-index recipes for the open profession"], 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    scanBtn:SetScript("OnLeave", GameTooltip_Hide)
+    return scanBtn
+end
+
+function PP:_BuildFilterBtn(f, scanBtn)
+    local filterBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    filterBtn:SetSize(110, 20)
+    filterBtn:SetPoint("LEFT", scanBtn, "RIGHT", 6, 0)
+    filterBtn:SetText("Filter selected")
+    filterBtn:SetScript("OnClick", function()
+        local itemID, link = TS:GetSelectedRecipe()
+        if not itemID then
+            print("|cFF00CCFFGuild Economy|r " .. L["Select a recipe first."])
+            return
+        end
+        local excluded = TS:ToggleExcluded(itemID)
+        local state = excluded and "|cFFFF4444exclu du scan|r" or "|cFF33DD33réintégré|r"
+        print("|cFF00CCFFTradeScanner|r " .. (link or itemID) .. " " .. state)
+        PP:Refresh()
+    end)
+    filterBtn:SetScript("OnEnter", function(b)
+        GameTooltip:SetOwner(b, "ANCHOR_TOP")
+        GameTooltip:SetText(L["Include/exclude the selected recipe"], 1, 1, 1)
+        GameTooltip:AddLine(L["An excluded item will no longer appear as sellable."], 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    filterBtn:SetScript("OnLeave", GameTooltip_Hide)
+end
 
 function PP:Build()
     if self.frame then return end
@@ -50,48 +97,8 @@ function PP:Build()
     title:SetText("|cFF00CCFFGuild wants|r")
     self.title = title
 
-    -- Bouton Scan
-    local scanBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    scanBtn:SetSize(70, 20)
-    scanBtn:SetPoint("TOPLEFT", 8, -28)
-    scanBtn:SetText("Scan")
-    scanBtn:SetScript("OnClick", function()
-        local count, prof = TS:ScanOpenProfession()
-        if prof then
-            print(string.format("|cFF00CCFFTradeScanner|r %s: %d recettes indexées.", prof, count))
-        end
-        PP:Refresh()
-    end)
-    scanBtn:SetScript("OnEnter", function(b)
-        GameTooltip:SetOwner(b, "ANCHOR_TOP")
-        GameTooltip:SetText("Réindexe les recettes du métier ouvert", 1, 1, 1)
-        GameTooltip:Show()
-    end)
-    scanBtn:SetScript("OnLeave", GameTooltip_Hide)
-
-    -- Bouton Filtre (exclut la recette sélectionnée)
-    local filterBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    filterBtn:SetSize(110, 20)
-    filterBtn:SetPoint("LEFT", scanBtn, "RIGHT", 6, 0)
-    filterBtn:SetText("Filter selected")
-    filterBtn:SetScript("OnClick", function()
-        local itemID, link = TS:GetSelectedRecipe()
-        if not itemID then
-            print("|cFF00CCFFTradeScanner|r Sélectionne d'abord une recette.")
-            return
-        end
-        local excluded = TS:ToggleExcluded(itemID)
-        local state = excluded and "|cFFFF4444exclu du scan|r" or "|cFF33DD33réintégré|r"
-        print("|cFF00CCFFTradeScanner|r " .. (link or itemID) .. " " .. state)
-        PP:Refresh()
-    end)
-    filterBtn:SetScript("OnEnter", function(b)
-        GameTooltip:SetOwner(b, "ANCHOR_TOP")
-        GameTooltip:SetText("Exclut / réintègre la recette sélectionnée", 1, 1, 1)
-        GameTooltip:AddLine("Un item exclu n'est plus proposé comme vendable.", 0.7, 0.7, 0.7, true)
-        GameTooltip:Show()
-    end)
-    filterBtn:SetScript("OnLeave", GameTooltip_Hide)
+    local scanBtn = self:_BuildScanBtn(f)
+    self:_BuildFilterBtn(f, scanBtn)
 
     -- Case "Only wanted"
     local cb = CreateFrame("CheckButton", "TradeScannerOnlyWanted", f, "UICheckButtonTemplate")
@@ -127,6 +134,51 @@ function PP:Build()
     self.frame = f
 end
 
+local function PPRowTooltip(r)
+    if not r.entry then return end
+    GameTooltip:SetOwner(r, "ANCHOR_RIGHT")
+    GameTooltip:ClearLines()
+    if r.isHeader then return end
+    if r.entry.isOrder then
+        local o = r.entry.order
+        if o.itemID then
+            pcall(GameTooltip.SetHyperlink, GameTooltip, "item:" .. o.itemID)
+        else
+            GameTooltip:SetText(TS.Guild:OrderName(o), 1, 1, 1)
+            GameTooltip:AddLine("|cFFCC88FF" .. L["Enchantment (service)"] .. "|r")
+        end
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(string.format("|cFFFFCC00%s|r veut x%d  %s", o.buyer, o.qty or 1, o.priceText or ""), 1, 1, 1)
+        if o.status == "accepted" then
+            GameTooltip:AddLine("|cFF33DD33" .. L["Accepted by "] .. (o.acceptedBy or "?") .. "|r")
+        end
+        if r.entry.mineOrder then
+            GameTooltip:AddLine("|cFF888888" .. L["Your order — click to cancel"] .. "|r")
+        else
+            GameTooltip:AddLine("|cFF888888" .. string.format(L["Click to accept (whisper %s)"], o.buyer) .. "|r")
+        end
+        GameTooltip:Show()
+        return
+    end
+    if r.entry.link then
+        local hyperlink = r.entry.link:match("|H([^|]+)|h")
+        if hyperlink then pcall(GameTooltip.SetHyperlink, GameTooltip, hyperlink) end
+    elseif r.entry.itemID then
+        pcall(GameTooltip.SetHyperlink, GameTooltip, "item:" .. r.entry.itemID)
+    else
+        GameTooltip:AddLine(r.entry.name or "", 1, 1, 1)
+    end
+    GameTooltip:AddLine(" ")
+    if r.entry.count and r.entry.count > 0 then
+        GameTooltip:AddLine("|cFFFFCC00Player who want this:|r")
+        for _, p in ipairs(r.entry.players) do GameTooltip:AddLine("  " .. p, 1, 1, 1) end
+        GameTooltip:AddLine("|cFF888888" .. L["Click to whisper "] .. (r.entry.players[1] or "") .. "|r")
+    else
+        GameTooltip:AddLine("|cFF888888" .. L["No one is asking for this (yet)"] .. "|r")
+    end
+    GameTooltip:Show()
+end
+
 function PP:BuildRow(parent, index)
     local row = CreateFrame("Button", nil, parent)
     row:SetSize(PANEL_W - 34, ROW_H)
@@ -149,63 +201,18 @@ function PP:BuildRow(parent, index)
     cntFS:SetJustifyH("RIGHT")
     row.cntFS = cntFS
 
-    row:SetScript("OnEnter", function(r)
-        if not r.entry then return end
-        GameTooltip:SetOwner(r, "ANCHOR_RIGHT")
-        GameTooltip:ClearLines()
-        if r.isHeader then return end
-        if r.entry.isOrder then
-            local o = r.entry.order
-            if o.itemID then
-                pcall(GameTooltip.SetHyperlink, GameTooltip, "item:" .. o.itemID)
-            else
-                GameTooltip:SetText(TS.Guild:OrderName(o), 1, 1, 1)
-                GameTooltip:AddLine("|cFFCC88FFEnchantement (service)|r")
-            end
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine(string.format("|cFFFFCC00%s|r veut x%d  %s", o.buyer, o.qty or 1, o.priceText or ""), 1, 1, 1)
-            if o.status == "accepted" then
-                GameTooltip:AddLine("|cFF33DD33Accepté par " .. (o.acceptedBy or "?") .. "|r")
-            end
-            if r.entry.mineOrder then
-                GameTooltip:AddLine("|cFF888888Ta commande — clic = annuler|r")
-            else
-                GameTooltip:AddLine("|cFF888888Clic = accepter (whisper " .. o.buyer .. ")|r")
-            end
-            GameTooltip:Show()
-            return
-        end
-        if r.entry.link then
-            local hyperlink = r.entry.link:match("|H([^|]+)|h")
-            if hyperlink then pcall(GameTooltip.SetHyperlink, GameTooltip, hyperlink) end
-        elseif r.entry.itemID then
-            pcall(GameTooltip.SetHyperlink, GameTooltip, "item:" .. r.entry.itemID)
-        else
-            GameTooltip:AddLine(r.entry.name or "", 1, 1, 1)
-        end
-        GameTooltip:AddLine(" ")
-        if r.entry.count and r.entry.count > 0 then
-            GameTooltip:AddLine("|cFFFFCC00Player who want this:|r")
-            for _, p in ipairs(r.entry.players) do
-                GameTooltip:AddLine("  " .. p, 1, 1, 1)
-            end
-            GameTooltip:AddLine("|cFF888888Clic = whisper " .. (r.entry.players[1] or "") .. "|r")
-        else
-            GameTooltip:AddLine("|cFF888888Personne ne le demande (encore)|r")
-        end
-        GameTooltip:Show()
-    end)
+    -- Bouton Accept/Cancel (visible sur les lignes de commandes craft)
+    local actionBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    actionBtn:SetSize(54, 14)
+    actionBtn:SetPoint("RIGHT", -2, 0)
+    actionBtn:Hide()
+    row.actionBtn = actionBtn
+
+    row:SetScript("OnEnter", PPRowTooltip)
     row:SetScript("OnLeave", GameTooltip_Hide)
     row:SetScript("OnClick", function(r)
-        if r.entry and r.entry.isOrder then
-            local o   = r.entry.order
-            local key = TS.Guild:OrderKey(o)
-            if r.entry.mineOrder then
-                TS.Guild:CancelOrder(o.buyer, key, false)
-            else
-                TS.Guild:AcceptOrder(o.buyer, key, false)
-            end
-        elseif r.entry and r.entry.players and r.entry.players[1] then
+        if r.entry and r.entry.isOrder then return end  -- géré par actionBtn
+        if r.entry and r.entry.players and r.entry.players[1] then
             ChatFrame_OpenChat("/w " .. r.entry.players[1] .. " ")
         end
     end)
@@ -276,54 +283,51 @@ function PP:BuildDisplayList(profName)
     return list
 end
 
+local function FillRow(row, item)
+    row.actionBtn:Hide()
+    if item.isHeader then
+        row.isHeader = true
+        row.nameFS:SetWidth(230); row.nameFS:SetText(item.name); row.cntFS:SetText("")
+    elseif item.isOrder then
+        local o   = item.order
+        local key = TS.Guild:OrderKey(o)
+        row.nameFS:SetWidth(130); row.nameFS:SetText(item.name); row.cntFS:SetText("")
+        local btn = row.actionBtn; btn:Show()
+        if item.mineOrder then
+            btn:SetText("Cancel")
+            btn:SetScript("OnClick", function() TS.Guild:CancelOrder(o.buyer, key, false) end)
+        else
+            btn:SetText("Accept")
+            btn:SetScript("OnClick", function() TS.Guild:AcceptOrder(o.buyer, key, false) end)
+        end
+    else
+        row.nameFS:SetWidth(160)
+        local nm = item.name or (item.itemID and TS:GetItemName(item.itemID)) or "?"
+        if item.count and item.count > 0 then
+            row.nameFS:SetText(nm); row.cntFS:SetText("|cFFFFCC00x" .. item.count .. "|r")
+        else
+            row.nameFS:SetText("|cFF777777" .. nm .. "|r"); row.cntFS:SetText("|cFF555555—|r")
+        end
+    end
+    row:Show()
+end
+
 function PP:Refresh()
     if not self.frame or not self.frame:IsShown() then return end
     local profName, openName = GetOpenProfession()
     if not profName then return end
-
     self.title:SetText("|cFF00CCFFGuild wants|r — |cFFFFFFFF" .. (openName or profName) .. "|r")
-
     local list = self:BuildDisplayList(profName)
-
-    for _, row in ipairs(self.rows) do
-        row:Hide()
-        row.entry = nil
-        row.isHeader = nil
-    end
-
+    for _, row in ipairs(self.rows) do row:Hide(); row.entry = nil; row.isHeader = nil end
     local count = math.min(#list, #self.rows)
     for i = 1, count do
-        local item = list[i]
-        local row  = self.rows[i]
-        row.entry  = item
-
-        if item.isHeader then
-            row.isHeader = true
-            row.nameFS:SetText(item.name)
-            row.cntFS:SetText("")
-            row.nameFS:SetWidth(230)
-        else
-            row.nameFS:SetWidth(160)
-            local nm = item.name or (item.itemID and TS:GetItemName(item.itemID)) or "?"
-            if item.count and item.count > 0 then
-                row.nameFS:SetText(nm)
-                row.cntFS:SetText("|cFFFFCC00x" .. item.count .. "|r")
-            else
-                row.nameFS:SetText("|cFF777777" .. nm .. "|r")
-                row.cntFS:SetText("|cFF555555—|r")
-            end
-        end
-        row:Show()
+        local row = self.rows[i]; row.entry = list[i]; FillRow(row, list[i])
     end
-
     if count == 0 then
-        -- rien à afficher
         local row = self.rows[1]
         row.nameFS:SetWidth(230)
-        row.nameFS:SetText("|cFF888888Aucune demande correspondante|r")
-        row.cntFS:SetText("")
-        row.isHeader = true
-        row:Show()
+        row.nameFS:SetText("|cFF888888" .. L["No matching requests"] .. "|r")
+        row.cntFS:SetText(""); row.isHeader = true; row:Show()
     end
 end
 

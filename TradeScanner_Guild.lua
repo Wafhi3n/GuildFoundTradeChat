@@ -9,6 +9,7 @@
 local TS    = TradeScanner
 local Guild = {}
 TS.Guild    = Guild
+local L     = TS.L
 
 -- ============================================================
 -- DÉTECTION DE MES MÉTIERS (≠ scan de recettes)
@@ -150,7 +151,7 @@ function Guild:PlaceItemOrder(itemID, qty, priceValue, priceText)
         status     = "open",
         timestamp  = time(),
     }, false)
-    print(string.format("|cFF00CCFFTradeScanner|r Commande postée : %s x%d",
+    print("|cFF00CCFFGuild Economy|r " .. string.format(L["Order placed: %s x%d"],
         TS:GetItemName(itemID), qty or 1))
 end
 
@@ -168,7 +169,7 @@ function Guild:PlaceEnchantOrder(enchantID, enchantName, profession, qty, priceV
         status      = "open",
         timestamp   = time(),
     }, false)
-    print(string.format("|cFF00CCFFTradeScanner|r Commande d'enchantement postée : %s x%d",
+    print("|cFF00CCFFGuild Economy|r " .. string.format(L["Enchantment order placed: %s x%d"],
         enchantName or "?", qty or 1))
 end
 
@@ -197,7 +198,8 @@ function Guild:AcceptOrder(buyer, key, fromNetwork, crafter)
         end
     elseif o.buyer == (UnitName("player") or "?") then
         -- C'est MA commande qu'un crafter vient d'accepter
-        print(string.format("|cFF00CCFFTradeScanner|r |cFF33DD33%s|r va honorer ta commande : %s",
+        print("|cFF00CCFFGuild Economy|r " .. string.format(
+            L["|cFF33DD33%s|r is going to fulfill your order: %s"],
             o.acceptedBy or "?", self:OrderName(o)))
         if TS.db.alertSound then PlaySound(1191) end
     end
@@ -230,8 +232,8 @@ end
 -- ============================================================
 
 function Guild:AlertOrder(o)
-    print(string.format(
-        "|cFF00CCFFTradeScanner|r |cFFFFCC00>> COMMANDE|r %s veut %s x%d (%s) — |cFFFFFFFF/w %s|r",
+    print("|cFF00CCFFGuild Economy|r |cFFFFCC00>> ORDER|r " .. string.format(
+        L["%s wants %s x%d (%s) — /w %s"],
         o.buyer, self:OrderName(o), o.qty or 1, o.priceText or "?", o.buyer))
     if TS.db.alertSound then PlaySound(1191) end
     if TS.Minimap then TS.Minimap:SetAlert(true) end
@@ -239,7 +241,10 @@ end
 
 function Guild:Refresh()
     if TS.OrderPanel and TS.OrderPanel.Refresh then TS.OrderPanel:Refresh() end
-    if TS.ProfPanel  and TS.ProfPanel.Refresh  then TS.ProfPanel:Refresh()  end
+    if TS.UI and TS.UI.activeTab == "orders" and TS.OrderPanel then
+        TS.OrderPanel:RefreshEmbed()
+    end
+    if TS.ProfPanel and TS.ProfPanel.Refresh then TS.ProfPanel:Refresh() end
 end
 
 -- ============================================================

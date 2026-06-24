@@ -22,36 +22,64 @@ local function ApplyPosition(btn, angle)
         RADIUS * math.sin(rad))
 end
 
+local function SetupTooltip(btn, mm)
+    btn:SetScript("OnEnter", function(b)
+        GameTooltip:SetOwner(b, "ANCHOR_LEFT")
+        GameTooltip:SetText("Guild Economy", 0, 0.8, 1)
+        GameTooltip:AddLine("Left-click: open/close", 1, 1, 1)
+        GameTooltip:AddLine("Right-drag: move button", 0.6, 0.6, 0.6)
+        if mm.pendingAlerts and mm.pendingAlerts > 0 then
+            GameTooltip:AddLine(string.format(
+                "|cFFFFCC00%d craftable request(s)!|r", mm.pendingAlerts), 1, 1, 1)
+        end
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", GameTooltip_Hide)
+end
+
+local function SetupDrag(btn)
+    btn:SetMovable(true)
+    btn:RegisterForDrag("RightButton")
+    btn:SetScript("OnDragStart", function(b)
+        b:SetScript("OnUpdate", function(b2)
+            local mx, my  = Minimap:GetCenter()
+            local scale   = UIParent:GetEffectiveScale()
+            local px, py  = GetCursorPosition()
+            px, py = px / scale, py / scale
+            local angle   = math.deg(math.atan2(py - my, px - mx))
+            SaveAngle(angle)
+            ApplyPosition(b2, angle)
+        end)
+    end)
+    btn:SetScript("OnDragStop", function(b)
+        b:SetScript("OnUpdate", nil)
+    end)
+end
+
 function MM:Build()
     if self.btn then return end
 
-    -- Parent UIParent, positionné par rapport à Minimap
-    -- (évite le clipping du frame Minimap)
     local btn = CreateFrame("Button", "TradeScannerMinimapBtn", UIParent)
     btn:SetSize(32, 32)
     btn:SetFrameStrata("MEDIUM")
     btn:SetFrameLevel(8)
     btn:SetClampedToScreen(false)
 
-    -- Fond circulaire
     local bg = btn:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetTexture("Interface\\Minimap\\UI-Minimap-ZoneButton-Background")
 
-    -- Icone commerce (sac de pieces)
     local icon = btn:CreateTexture(nil, "ARTWORK")
     icon:SetSize(20, 20)
     icon:SetPoint("CENTER", 0, 0)
     icon:SetTexture("Interface\\Icons\\INV_Misc_Bag_08")
     self.icon = icon
 
-    -- Bordure minimap standard
     local border = btn:CreateTexture(nil, "OVERLAY")
     border:SetSize(56, 56)
     border:SetPoint("CENTER", 0, 0)
     border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 
-    -- Badge alerte (cercle doré qui pulse)
     local alertRing = btn:CreateTexture(nil, "OVERLAY")
     alertRing:SetSize(36, 36)
     alertRing:SetPoint("CENTER", 0, 0)
@@ -60,52 +88,18 @@ function MM:Build()
     alertRing:Hide()
     self.alertRing = alertRing
 
-    -- Highlight au survol
     btn:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoneButton-Highlight")
-
-    btn:SetScript("OnEnter", function(b)
-        GameTooltip:SetOwner(b, "ANCHOR_LEFT")
-        GameTooltip:SetText("TradeScanner", 0, 0.8, 1)
-        GameTooltip:AddLine("Left-click: open/close", 1, 1, 1)
-        GameTooltip:AddLine("Right-drag: move button", 0.6, 0.6, 0.6)
-        if MM.pendingAlerts and MM.pendingAlerts > 0 then
-            GameTooltip:AddLine(string.format("|cFFFFCC00%d demande(s) craftable(s) !|r", MM.pendingAlerts), 1, 1, 1)
-        end
-        GameTooltip:Show()
-    end)
-    btn:SetScript("OnLeave", GameTooltip_Hide)
-
     btn:SetScript("OnClick", function(_, mouseBtn)
-        if mouseBtn == "LeftButton" and TS.UI then
-            TS.UI:Toggle()
-        end
+        if mouseBtn == "LeftButton" and TS.UI then TS.UI:Toggle() end
     end)
 
-    btn:SetMovable(true)
-    btn:RegisterForDrag("RightButton")
-
-    btn:SetScript("OnDragStart", function(b)
-        b:SetScript("OnUpdate", function(b2)
-            local mx, my = Minimap:GetCenter()
-            local scale  = UIParent:GetEffectiveScale()
-            local px, py = GetCursorPosition()
-            px, py = px / scale, py / scale
-            local angle = math.deg(math.atan2(py - my, px - mx))
-            SaveAngle(angle)
-            ApplyPosition(b2, angle)
-        end)
-    end)
-
-    btn:SetScript("OnDragStop", function(b)
-        b:SetScript("OnUpdate", nil)
-    end)
-
+    SetupTooltip(btn, self)
+    SetupDrag(btn)
     ApplyPosition(btn, GetAngle())
-    self.btn          = btn
+    self.btn           = btn
     self.pendingAlerts = 0
 end
 
--- Allume le signal doré sur le bouton minimap
 function MM:SetAlert(active)
     if not self.btn then return end
     if active then

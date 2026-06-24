@@ -41,7 +41,6 @@ function TS:LoadStaticData()
     self.profAliases        = {}
     self.staticByProfession = {}  -- [profCanonical] = { [itemID] = name }  (catalogue items /ts order)
     self.enchantsByProfession = {}  -- [profCanonical] = { { id=spellID, name= } }  (catalogue enchants)
-
     local function indexByProf(profName, itemID, name)
         local bucket = self.staticByProfession[profName]
         if not bucket then bucket = {}; self.staticByProfession[profName] = bucket end

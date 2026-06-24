@@ -137,75 +137,74 @@ local function GetPlayerShort(fullName)
     return fullName:match("^([^%-]+)") or fullName
 end
 
--- Parse et traite un message reçu (HI / OF / DN)
+function NET:_HandleOF(message)
+    local parts = {}
+    for part in message:gmatch("([^|]+)") do table.insert(parts, part) end
+    if #parts < 6 then return end
+    local player     = parts[1]
+    local offerType  = parts[2]
+    local itemID     = tonumber(parts[3])
+    local priceValue = tonumber(parts[4]) or 0
+    local priceText  = parts[5]
+    local timestamp  = tonumber(parts[6]) or time()
+    local cat, prof
+    if itemID then cat, prof = TS:GetProducible(itemID) end
+    TS:AddOffer({
+        offerType    = offerType, player = player, itemID = itemID,
+        itemName     = itemID and TS:GetItemName(itemID) or nil,
+        itemLink     = nil, priceText = (priceText ~= "" and priceText) or nil,
+        priceValue   = priceValue, rawMsg = nil, timestamp = timestamp,
+        canCraft     = cat ~= nil, sellCategory = cat, profession = prof,
+        source       = "network",
+    })
+end
+
+function NET:_HandleDN(message)
+    local parts = {}
+    for part in message:gmatch("([^|]+)") do table.insert(parts, part) end
+    if #parts >= 2 then
+        local itemID = tonumber(parts[2])
+        if itemID then TS:MarkDone(parts[1], itemID, true) end
+    end
+end
+
+function NET:_HandleCO(message)
+    local buyer, kind, id, qty, pv, ptext, prof, name =
+        message:match("^CO|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|(.*)$")
+    id = tonumber(id)
+    if not (TS.Guild and buyer and id) then return end
+    local o = {
+        buyer      = buyer, qty = tonumber(qty) or 1,
+        priceValue = tonumber(pv) or 0,
+        priceText  = (ptext ~= "" and ptext) or nil,
+        profession = (prof  ~= "" and prof)  or nil,
+        status     = "open", timestamp = time(),
+    }
+    if kind == "E" then
+        o.enchantID = id; o.enchantName = (name ~= "" and name) or nil
+    else
+        o.itemID = id
+    end
+    TS.Guild:AddOrder(o, true)
+end
+
 function NET:HandleMessage(senderName, message)
     if not message or message == "" then return end
-
     local playerShort = GetPlayerShort(senderName)
     local cmd = message:match("^([A-Z]+)")
 
     if cmd == "HI" then
-        -- Quelqu'un se co : envoyer nos offres, nos commandes et nos métiers
         self:SendAllOffersDelayed()
         self:SendAllOrdersDelayed()
         if TS.Guild then
-            -- Si la détection (+2s) n'a pas encore tourné, la forcer immédiatement
             if not TS.Guild.myProfessions then TS.Guild:DetectMyProfessions() end
             self:BroadcastProfessions(TS.Guild.myProfessions)
         end
 
-    elseif cmd == "OF" then
-        -- Nouvelle offre reçue
-        local parts = {}
-        for part in message:gmatch("([^|]+)") do
-            table.insert(parts, part)
-        end
-        if #parts >= 6 then
-            local offerType  = parts[2]
-            local itemID     = tonumber(parts[3])
-            local priceValue = tonumber(parts[4]) or 0
-            local priceText  = parts[5]
-            local timestamp  = tonumber(parts[6]) or time()
-            local player     = parts[1]
-
-            -- Construire l'offre (GetProducible appelé une seule fois)
-            local cat, prof
-            if itemID then cat, prof = TS:GetProducible(itemID) end
-            local offer = {
-                offerType    = offerType,
-                player       = player,
-                itemID       = itemID,
-                itemName     = itemID and TS:GetItemName(itemID) or nil,
-                itemLink     = nil,  -- pas de lien dans le payload
-                priceText    = (priceText ~= "" and priceText) or nil,
-                priceValue   = priceValue,
-                rawMsg       = nil,  -- reconstruction pas possible
-                timestamp    = timestamp,
-                canCraft     = cat ~= nil,
-                sellCategory = cat,
-                profession   = prof,
-                source       = "network",
-            }
-
-            TS:AddOffer(offer)
-        end
-
-    elseif cmd == "DN" then
-        -- Offre marquée comme traitée
-        local parts = {}
-        for part in message:gmatch("([^|]+)") do
-            table.insert(parts, part)
-        end
-        if #parts >= 2 then
-            local player = parts[1]
-            local itemID = tonumber(parts[2])
-            if itemID then
-                TS:MarkDone(player, itemID, true)
-            end
-        end
+    elseif cmd == "OF" then self:_HandleOF(message)
+    elseif cmd == "DN" then self:_HandleDN(message)
 
     elseif cmd == "PR" then
-        -- Annonce de métiers : "PR|prof1,prof2,..."
         if TS.Guild then
             local body = message:match("^PR|(.*)$") or ""
             local profs = {}
@@ -213,45 +212,18 @@ function NET:HandleMessage(senderName, message)
             TS.Guild:UpdateRoster(playerShort, profs)
         end
 
-    elseif cmd == "CO" then
-        -- Nouvelle commande : "CO|buyer|kind|id|qty|priceValue|priceText|profession|name"
-        -- (match positionnel : priceText/profession/name peuvent être vides)
-        local buyer, kind, id, qty, pv, ptext, prof, name =
-            message:match("^CO|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|(.*)$")
-        id = tonumber(id)
-        if TS.Guild and buyer and id then
-            local o = {
-                buyer      = buyer,
-                qty        = tonumber(qty) or 1,
-                priceValue = tonumber(pv) or 0,
-                priceText  = (ptext ~= "" and ptext) or nil,
-                profession = (prof ~= "" and prof) or nil,
-                status     = "open",
-                timestamp  = time(),
-            }
-            if kind == "E" then
-                o.enchantID   = id
-                o.enchantName = (name ~= "" and name) or nil
-            else
-                o.itemID = id
-            end
-            TS.Guild:AddOrder(o, true)
-        end
+    elseif cmd == "CO" then self:_HandleCO(message)
 
     elseif cmd == "CC" then
-        -- Annulation : "CC|buyer|kind|id"
         local buyer, kind, id = message:match("^CC|([^|]+)|([^|]+)|(%d+)")
         if TS.Guild and buyer and id then
-            local key = (kind == "E" and "e" or "i") .. id
-            TS.Guild:CancelOrder(buyer, key, true)
+            TS.Guild:CancelOrder(buyer, (kind == "E" and "e" or "i") .. id, true)
         end
 
     elseif cmd == "CA" then
-        -- Acceptation : "CA|crafter|buyer|kind|id"
         local crafter, buyer, kind, id = message:match("^CA|([^|]+)|([^|]+)|([^|]+)|(%d+)")
         if TS.Guild and crafter and buyer and id then
-            local key = (kind == "E" and "e" or "i") .. id
-            TS.Guild:AcceptOrder(buyer, key, true, crafter)
+            TS.Guild:AcceptOrder(buyer, (kind == "E" and "e" or "i") .. id, true, crafter)
         end
     end
 end

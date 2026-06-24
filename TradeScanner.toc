@@ -1,11 +1,16 @@
 ## Interface: 11503
-## Title: TradeScanner
-## Notes: Scanner de canal de commerce avec intégration métiers. /ts pour ouvrir.
+## Title: Guild Economy
+## Notes: Guild trade channel scanner with profession integration and craft orders. /ts to open.
 ## Author:
 ## Version: 1.3.0
 ## SavedVariables: TradeScannerDB, TradeScannerLog
 
 TradeScanner.lua
+TradeScanner_Offers.lua
+TradeScanner_Craft.lua
+TradeScanner_Commands.lua
+TradeScanner_Locale.lua
+Locale\frFR.lua
 TradeScanner_Data.lua
 
 # Base de métiers statique (générée depuis MTSL + Wowhead, cf. tools/)
@@ -22,7 +27,9 @@ Data\Professions\Tailoring.lua
 
 TradeScanner_Minimap.lua
 TradeScanner_UI.lua
+TradeScanner_UI_Rows.lua
 TradeScanner_ProfPanel.lua
 TradeScanner_Network.lua
 TradeScanner_Guild.lua
 TradeScanner_OrderPanel.lua
+TradeScanner_OrderPanel_Rows.lua
