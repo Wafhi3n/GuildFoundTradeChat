@@ -25,6 +25,7 @@ L["Orders"]                                              = "Commandes"
 L["— My orders —"]                                       = "— Mes commandes —"
 L["— Open (%s) —"]                                       = "— Ouvertes (%s) —"
 L["— Chat requests (%s) —"]                              = "— Demandes chat (%s) —"
+L["— Online (%d) —"]                                     = "— En ligne (%d) —"
 L["Enchantment (service)"]                               = "Enchantement (service)"
 
 -- TradeScanner_Guild (chat messages)

@@ -44,6 +44,28 @@ function NET:BroadcastHello()
     self:Send("HI")
 end
 
+local function GetAddonVersion()
+    local f = (C_AddOns and C_AddOns.GetAddOnMetadata) or _G.GetAddOnMetadata
+    return (f and f("TradeScanner", "Version")) or "?"
+end
+
+-- Ping de présence "qui est en ligne ?" — déclenché par un clic (onglet Orders),
+-- donc envoyable aussi à la confédération. Throttlé pour éviter le spam.
+function NET:BroadcastWho()
+    local now = GetTime()
+    if self.lastWho and (now - self.lastWho) < 5 then return end
+    self.lastWho = now
+    self:Send("WHO")
+    self:SendConfederation("WHO")  -- pile de clic = hardware event
+end
+
+-- Réponse de présence : "IM|prof1,prof2|version". Émise depuis un handler
+-- réseau (réception de WHO) → guilde locale uniquement (pas de hardware event).
+function NET:BroadcastPresence()
+    local profs = (TS.Guild and TS.Guild.myProfessions) or {}
+    self:Send("IM|" .. table.concat(profs, ",") .. "|" .. GetAddonVersion())
+end
+
 -- Envoie une offre unique
 function NET:BroadcastOffer(offer)
     if not offer or offer.source == "network" then return end
@@ -207,12 +229,28 @@ function NET:HandleMessage(senderName, message)
     local playerShort = GetPlayerShort(senderName)
     local cmd = message:match("^([A-Z]+)")
 
+    -- Présence passive : tout message reçu prouve que l'expéditeur est en ligne avec l'addon.
+    if TS.Guild and playerShort then TS.Guild:MarkSeen(playerShort) end
+
     if cmd == "HI" then
         self:SendAllOffersDelayed()
         self:SendAllOrdersDelayed()
         if TS.Guild then
             if not TS.Guild.myProfessions then TS.Guild:DetectMyProfessions() end
             self:BroadcastProfessions(TS.Guild.myProfessions)
+        end
+
+    elseif cmd == "WHO" then
+        -- Ping de présence : je réponds qui je suis (métiers + version).
+        self:BroadcastPresence()
+
+    elseif cmd == "IM" then
+        -- "IM|prof1,prof2|version" — réponse de présence d'un membre.
+        if TS.Guild then
+            local body, ver = message:match("^IM|([^|]*)|?(.*)$")
+            local profs = {}
+            for p in (body or ""):gmatch("([^,]+)") do profs[#profs + 1] = p end
+            TS.Guild:UpdateRoster(playerShort, profs, ver ~= "" and ver or nil)
         end
 
     elseif cmd == "OF" then self:_HandleOF(message)

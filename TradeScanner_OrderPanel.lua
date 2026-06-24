@@ -288,6 +288,15 @@ function OP:RefreshOrders()
         elseif item.header then
             row.fs:SetText(item.header); row.fs:SetWidth(258)
             row.btn:Hide(); row:Show()
+        elseif item.presence then
+            local u     = item.presence
+            local profs = #u.professions > 0 and table.concat(u.professions, ", ") or ""
+            local nameC = u.isSelf and "|cFFFFFFFF" or "|cFFCCCCCC"
+            row.fs:SetWidth(258)
+            row.fs:SetText(string.format("|cFF33FF33%s|r %s%s|r%s", "\226\151\143",
+                nameC, u.player,
+                profs ~= "" and ("  |cFF888888" .. profs .. "|r") or ""))
+            row.btn:Hide(); row:Show()
         elseif item.request then
             local o   = item.request
             local nm  = TS:GetItemName(o.itemID, o.itemName)

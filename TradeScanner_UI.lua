@@ -256,6 +256,8 @@ function UI:SetTab(tabID)
     if self.offersPane then self.offersPane:SetShown(not isOrders) end
     if self.ordersPane then self.ordersPane:SetShown(isOrders) end
     if tabID == "sell" and TS.Minimap then TS.Minimap:SetAlert(false) end
+    -- Ouvrir Orders (clic = hardware event) → ping de présence "qui est en ligne ?"
+    if isOrders and TS.Net then TS.Net:BroadcastWho() end
     self:Refresh()
 end
 

@@ -60,6 +60,12 @@ end
 -- ------------------------------------------------------------------
 function OP:BuildOrderList(prof, me)
     local rows = {}
+    -- Section présence : membres de Guild Economy en ligne (global, tous métiers).
+    local online = TS.Guild:GetOnlineUsers()
+    rows[#rows + 1] = { header = "|cFF66FF99" ..
+        string.format(L["— Online (%d) —"], #online) .. "|r" }
+    for _, u in ipairs(online) do rows[#rows + 1] = { presence = u } end
+
     local mine = TS.Guild:GetMyOrders()
     if #mine > 0 then
         rows[#rows + 1] = { header = "|cFF66CCFF" .. L["— My orders —"] .. "|r" }

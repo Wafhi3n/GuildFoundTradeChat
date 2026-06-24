@@ -51,10 +51,38 @@ end
 -- REGISTRE DE GUILDE
 -- ============================================================
 
-function Guild:UpdateRoster(player, professions)
+local ONLINE_WINDOW = 90  -- secondes : vu plus récemment que ça ⇒ "en ligne"
+
+-- Marque un membre comme vu maintenant (présence passive), sans Refresh ni
+-- écraser ses métiers connus. Appelé pour tout message reçu.
+function Guild:MarkSeen(player, professions, version)
     if not player then return end
-    TS.db.guildRoster[player] = { professions = professions or {}, lastSeen = time() }
+    local r = TS.db.guildRoster[player] or {}
+    r.lastSeen = time()
+    if professions then r.professions = professions end
+    if version then r.version = version end
+    TS.db.guildRoster[player] = r
+end
+
+function Guild:UpdateRoster(player, professions, version)
+    if not player then return end
+    self:MarkSeen(player, professions or {}, version)
     self:Refresh()
+end
+
+-- Membres en ligne avec Guild Economy (vus dans la fenêtre récente), moi inclus en tête.
+function Guild:GetOnlineUsers()
+    local now, me = time(), UnitName("player") or "?"
+    local out = {}
+    for player, info in pairs(TS.db.guildRoster or {}) do
+        if player ~= me and info.lastSeen and (now - info.lastSeen) <= ONLINE_WINDOW then
+            out[#out + 1] = { player = player, professions = info.professions or {},
+                              lastSeen = info.lastSeen, version = info.version }
+        end
+    end
+    table.sort(out, function(a, b) return a.player < b.player end)
+    table.insert(out, 1, { player = me, professions = self.myProfessions or {}, isSelf = true })
+    return out
 end
 
 -- Liste des membres connus possédant un métier donné
