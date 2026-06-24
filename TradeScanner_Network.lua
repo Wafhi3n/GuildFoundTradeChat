@@ -23,12 +23,10 @@ function NET:Send(payload)
         C_ChatInfo.SendAddonMessage(PREFIX, payload, "GUILD")
     end
 
-    -- GreenWall (cross-serveur) — désactivé pour l'instant (timing issues)
-    -- if GreenWallAPI and type(GreenWallAPI.SendMessage) == "function" then
-    --     local ok = pcall(function()
-    --         GreenWallAPI.SendMessage(PREFIX, payload)
-    --     end)
-    -- end
+    -- GreenWall (confédération : guildes sœurs cross-serveur)
+    if GreenWallAPI and type(GreenWallAPI.SendMessage) == "function" then
+        pcall(GreenWallAPI.SendMessage, PREFIX, payload)
+    end
 end
 
 -- Envoie un HELLO (invite les autres à envoyer leurs offres)
@@ -254,16 +252,42 @@ function NET:Init()
         end
     end)
 
-    -- GreenWallAPI (cross-serveur) — désactivé pour l'instant (timing issues au login)
-    -- À réactiver plus tard avec meilleur timing
-    -- if GreenWallAPI and type(GreenWallAPI.AddMessageHandler) == "function" then
-    --     pcall(function()
-    --         GreenWallAPI.AddMessageHandler(..., PREFIX, 0)
-    --     end)
-    -- end
+    -- GreenWall (confédération) : l'API n'est pas forcément prête au login,
+    -- on réessaie l'enregistrement jusqu'à ce qu'elle réponde.
+    self:RegisterGreenWall()
 
     -- HELLO initial (2s après login)
     C_Timer.After(HELLO_DELAY, function()
         NET:BroadcastHello()
     end)
+end
+
+-- Enregistre le handler GreenWall dès que l'API est disponible.
+-- Le handler reçoit (addon, sender, message, echo, guild) :
+--   echo  = mon propre message (renvoyé par le bridge)
+--   guild = vient de MA guilde (déjà reçu via le canal addon "GUILD")
+-- → on n'agit que sur le trafic des guildes sœurs.
+function NET:RegisterGreenWall(attempt)
+    attempt = attempt or 1
+    if self.gwRegistered then return end
+
+    if GreenWallAPI and type(GreenWallAPI.AddMessageHandler) == "function" then
+        local ok = pcall(function()
+            GreenWallAPI.AddMessageHandler(function(_, sender, message, echo, guild)
+                if echo or guild then return end
+                NET:HandleMessage(sender, message)
+            end, PREFIX, 0)
+        end)
+        if ok then
+            self.gwRegistered = true
+            -- Re-HELLO une fois branché sur la confédération pour récupérer
+            -- les offres/commandes déjà actives des guildes sœurs.
+            C_Timer.After(HELLO_DELAY, function() NET:BroadcastHello() end)
+            return
+        end
+    end
+
+    if attempt < 12 then  -- ~1 min de tentatives (5s × 12)
+        C_Timer.After(5, function() NET:RegisterGreenWall(attempt + 1) end)
+    end
 end
