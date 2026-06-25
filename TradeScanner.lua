@@ -56,6 +56,16 @@ local function SeedKeywords(db)
     end
 end
 
+-- Purge les offres réseau corrompues à itemID 0 : un client pré-1.5.1 diffusait une
+-- offre SANS lien d'objet via OF avec itemID="0" → reconstruite ici en "item:0" (l'OF
+-- ne porte pas le texte brut). Nettoyage au login le temps que tous migrent. (hotfix 1.5.1)
+local function PurgeZeroItemOffers(db)
+    if not db.offers then return end
+    for i = #db.offers, 1, -1 do
+        if db.offers[i].itemID == 0 then table.remove(db.offers, i) end
+    end
+end
+
 function TS:Init()
     if not TradeScannerDB then TradeScannerDB = {} end
     local db = TradeScannerDB
@@ -99,6 +109,7 @@ function TS:Init()
     ApplyKeywordMigrations(db)
 
     self:PurgeOldOrders()  -- vide les commandes de craft dormantes (cf. doc §8)
+    PurgeZeroItemOffers(db)  -- nettoie les offres "item:0" héritées (hotfix 1.5.1)
 
     if not db.errorLog then db.errorLog = {} end
 
@@ -258,7 +269,7 @@ end
 
 -- Localised item name via WoW API. Falls back to label or "item:ID".
 function TS:GetItemName(itemID, fallback)
-    if not itemID then return fallback end
+    if not itemID or itemID == 0 then return fallback end
     local name = GetItemInfo(itemID)
     return name or fallback or ("item:" .. itemID)
 end

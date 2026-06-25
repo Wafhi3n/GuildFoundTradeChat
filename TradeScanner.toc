@@ -2,7 +2,7 @@
 ## Title: Guild Economy
 ## Notes: Guild trade channel scanner with profession integration and craft orders. /ts to open.
 ## Author:
-## Version: 1.5.0
+## Version: 1.5.1
 ## SavedVariables: TradeScannerDB, TradeScannerLog
 
 TradeScanner.lua

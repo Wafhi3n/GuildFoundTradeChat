@@ -107,10 +107,14 @@ end
 -- Envoie une offre unique
 function NET:BroadcastOffer(offer)
     if not offer or offer.source == "network" then return end
+    -- Offre en texte brut (sans lien d'objet) : chaque client la parse lui-même depuis le
+    -- chat. La diffuser via OF (qui ne porte pas le rawMsg) la reconstruirait en "item:0"
+    -- chez les autres → on ne diffuse que les offres avec un itemID réel. (hotfix 1.5.1)
+    if not offer.itemID then return end
     local payload = string.format("OF|%s|%s|%s|%d|%s|%d",
         offer.player or "",
         offer.offerType or "",
-        offer.itemID or "0",
+        offer.itemID,
         offer.priceValue or 0,
         (offer.priceText or ""):gsub("|", ""),  -- échappe les pipes
         offer.timestamp or 0
@@ -263,6 +267,9 @@ function NET:_HandleOF(message)
         message:match("^OF|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)$")
     if not player then return end
     itemID     = tonumber(itemID)
+    -- Ignore les offres sans objet réel (itemID 0 = client pré-1.5.1 diffusant une offre
+    -- texte brut → "item:0"). Elles sont de toute façon parsées localement depuis le chat.
+    if not itemID or itemID == 0 then return end
     priceValue = tonumber(priceValue) or 0
     timestamp  = tonumber(timestamp) or time()
     local cat, prof
