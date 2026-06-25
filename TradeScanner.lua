@@ -10,6 +10,7 @@ local TS = TradeScanner
 
 local OFFER_EXPIRY = 1800  -- 30 minutes
 local MAX_OFFERS   = 300
+local ORDER_EXPIRY = 7 * 24 * 3600  -- 7 jours : purge des commandes de craft dormantes
 
 local DEFAULTS = {
     channel  = "freshtrade",
@@ -123,6 +124,42 @@ function TS:ClearExpired()
     end
 end
 
+-- Refresh d'UI coalescé : regroupe les rafales réseau (resync HI, login storm,
+-- bursts CO/OF) en UN seul rebuild après un court délai, au lieu d'un rebuild par
+-- message reçu. Indispensable à l'échelle (guildes de 1000 → pics de logins).
+--   • La fenêtre d'offres n'est rebuild que si VISIBLE — UI:Refresh ne teste pas
+--     IsShown lui-même, donc sans ce garde elle se reconstruit fenêtre fermée.
+--   • Les panneaux guilde (OrderPanel/ProfPanel) s'auto-gardent déjà par IsShown.
+local refreshPending = false
+function TS:RequestRefresh()
+    local function doRefresh()
+        refreshPending = false
+        if TS.UI and TS.UI.Refresh and TS.UI.frame and TS.UI.frame:IsShown() then
+            TS.UI:Refresh()
+        end
+        if TS.Guild and TS.Guild.Refresh then TS.Guild:Refresh() end
+    end
+    if not (C_Timer and C_Timer.After) then return doRefresh() end
+    if refreshPending then return end
+    refreshPending = true
+    C_Timer.After(0.2, doRefresh)
+end
+
+-- Purge les commandes de craft dormantes (auteur parti / jamais livrées). Sans ça,
+-- db.craftOrders ne se vide jamais (contrairement aux offres, OFFER_EXPIRY) et la
+-- liste tend vers le plafond MAX_OFFERS → resync HI maximale en permanence (doc §8).
+-- La livraison CF en retire déjà, ceci rattrape les commandes abandonnées.
+function TS:PurgeOldOrders()
+    local orders = self.db and self.db.craftOrders
+    if not orders then return end
+    local now = time()
+    for i = #orders, 1, -1 do
+        if now - (orders[i].timestamp or 0) > ORDER_EXPIRY then
+            table.remove(orders, i)
+        end
+    end
+end
+
 -- ============================================================
 -- PROFESSION INTEGRATION
 -- ============================================================
@@ -226,6 +263,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if TS.Minimap then TS.Minimap:Init() end
         if TS.Net     then TS.Net:Init()     end
         if TS.Guild   then TS.Guild:Init()   end
+        if TS.Trade   then TS.Trade:Init()   end
         if TS.BagSell then TS.BagSell:Init() end
         local _origErr = geterrorhandler and geterrorhandler()
         seterrorhandler(function(err)

@@ -4,7 +4,7 @@ local TS = TradeScanner
 local MM = {}
 TS.Minimap = MM
 
-local RADIUS = 80
+local RADIUS_PADDING = 5  -- distance entre le bord du minimap et le centre du bouton (même valeur que LibDBIcon)
 
 local function GetAngle()
     return (TS.db and TS.db.minimapAngle) or 225
@@ -14,12 +14,15 @@ local function SaveAngle(a)
     if TS.db then TS.db.minimapAngle = a end
 end
 
+local function GetRadius()
+    return (Minimap:GetWidth() / 2) + RADIUS_PADDING
+end
+
 local function ApplyPosition(btn, angle)
     local rad = math.rad(angle)
+    local r   = GetRadius()
     btn:ClearAllPoints()
-    btn:SetPoint("CENTER", Minimap, "CENTER",
-        RADIUS * math.cos(rad),
-        RADIUS * math.sin(rad))
+    btn:SetPoint("CENTER", Minimap, "CENTER", r * math.cos(rad), r * math.sin(rad))
 end
 
 local function SetupTooltip(btn, mm)
@@ -43,7 +46,7 @@ local function SetupDrag(btn)
     btn:SetScript("OnDragStart", function(b)
         b:SetScript("OnUpdate", function(b2)
             local mx, my  = Minimap:GetCenter()
-            local scale   = UIParent:GetEffectiveScale()
+            local scale   = Minimap:GetEffectiveScale()
             local px, py  = GetCursorPosition()
             px, py = px / scale, py / scale
             local angle   = math.deg(math.atan2(py - my, px - mx))
@@ -59,7 +62,7 @@ end
 function MM:Build()
     if self.btn then return end
 
-    local btn = CreateFrame("Button", "TradeScannerMinimapBtn", UIParent)
+    local btn = CreateFrame("Button", "TradeScannerMinimapBtn", Minimap)
     btn:SetSize(32, 32)
     btn:SetFrameStrata("MEDIUM")
     btn:SetFrameLevel(8)
@@ -77,16 +80,9 @@ function MM:Build()
 
     local border = btn:CreateTexture(nil, "OVERLAY")
     border:SetSize(56, 56)
-    border:SetPoint("CENTER", 0, 0)
+    border:SetPoint("CENTER", btn, "CENTER", 0, 0)
     border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-
-    local alertRing = btn:CreateTexture(nil, "OVERLAY")
-    alertRing:SetSize(36, 36)
-    alertRing:SetPoint("CENTER", 0, 0)
-    alertRing:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-    alertRing:SetVertexColor(1, 0.78, 0, 1)
-    alertRing:Hide()
-    self.alertRing = alertRing
+    self.border = border
 
     btn:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoneButton-Highlight")
     btn:SetScript("OnClick", function(_, mouseBtn)

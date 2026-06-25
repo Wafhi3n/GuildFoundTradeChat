@@ -67,7 +67,7 @@ end
 function Guild:UpdateRoster(player, professions, version)
     if not player then return end
     self:MarkSeen(player, professions or {}, version)
-    self:Refresh()
+    TS:RequestRefresh()
 end
 
 -- Membres en ligne avec Guild Economy (vus dans la fenêtre récente), moi inclus en tête.
@@ -163,7 +163,7 @@ function Guild:AddOrder(o, fromNetwork)
     if not fromNetwork and TS.Net then TS.Net:BroadcastOrder(o, true) end
     -- Alerter seulement pour les nouvelles commandes, pas les resyncs HI
     if fromNetwork and isNew and self:IHaveProfession(o.profession) then self:AlertOrder(o) end
-    self:Refresh()
+    TS:RequestRefresh()
 end
 
 -- Poste une commande d'OBJET (appelé par l'UI)
@@ -208,7 +208,7 @@ function Guild:CancelOrder(buyer, key, fromNetwork)
     if not fromNetwork and TS.Net and o then
         TS.Net:BroadcastCancel(buyer, o.enchantID and "E" or "I", o.enchantID or o.itemID)
     end
-    self:Refresh()
+    TS:RequestRefresh()
 end
 
 -- Accepte une commande : marque acceptedBy + whisper auto à l'acheteur.
@@ -232,7 +232,58 @@ function Guild:AcceptOrder(buyer, key, fromNetwork, crafter)
             o.acceptedBy or "?", self:OrderName(o)))
         if TS.db.alertSound then PlaySound(1191) end
     end
-    self:Refresh()
+    TS:RequestRefresh()
+end
+
+-- Valide (= livre) une commande. `delivered` = quantité livrée (nil = tout le reste,
+-- ex. clic « Valider »). Si la quantité restante tombe à 0 → commande retirée PARTOUT ;
+-- sinon sa quantité est décrémentée et propagée. Broadcast CF dans les deux cas.
+-- localOnly = true ⇒ pas de relais GreenWall (appel hors hardware event, ex. trade auto).
+function Guild:FulfillOrder(buyer, key, delivered, fromNetwork, localOnly)
+    local o, i = self:FindOrder(buyer, key)
+    if not o then return end
+    local want = o.qty or 1
+    delivered  = delivered or want      -- nil ⇒ livraison complète
+    if delivered < 1 then return end
+    local remaining = want - delivered
+    local name = self:OrderName(o)
+    if remaining > 0 then o.qty = remaining
+    elseif i then table.remove(TS.db.craftOrders, i) end
+    if not fromNetwork and TS.Net then
+        TS.Net:BroadcastFulfill(buyer, o.enchantID and "E" or "I", o.enchantID or o.itemID, delivered, localOnly)
+    end
+    self:_PrintFulfill(o, buyer, name, remaining)
+    TS:RequestRefresh()
+end
+
+-- Message de feedback pour les parties concernées (acheteur / crafter).
+function Guild:_PrintFulfill(o, buyer, name, remaining)
+    local me, p = UnitName("player") or "?", "|cFF00CCFFGuild Economy|r "
+    if o.buyer == me then
+        if remaining > 0 then
+            print(p .. string.format(L["Partial delivery received: %s (x%d left)"], name, remaining))
+        else
+            print(p .. string.format(L["Order received: %s"], name))
+            if TS.db.alertSound then PlaySound(1191) end
+        end
+    elseif o.acceptedBy == me then
+        if remaining > 0 then
+            print(p .. string.format(L["Partial delivery: %s to %s (x%d left)"], name, buyer, remaining))
+        else
+            print(p .. string.format(L["Order delivered: %s to %s"], name, buyer))
+        end
+    end
+end
+
+-- Ma commande ouverte correspondant à un itemID reçu (auto-validation au trade).
+-- Les enchantements (services) n'ont pas d'itemID → jamais retournés.
+function Guild:MyOrderForItem(itemID)
+    if not itemID then return nil end
+    local me = UnitName("player") or "?"
+    for _, o in ipairs(TS.db.craftOrders) do
+        if o.buyer == me and o.itemID == itemID then return o end
+    end
+    return nil
 end
 
 -- ------------------------------------------------------------------

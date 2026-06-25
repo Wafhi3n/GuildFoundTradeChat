@@ -33,6 +33,12 @@ L["Order placed: %s x%d"]                               = "Commande postée : %s
 L["Enchantment order placed: %s x%d"]                   = "Commande d'enchantement postée : %s x%d"
 L["%s wants %s x%d (%s) — /w %s"]                       = "%s veut %s x%d (%s) — /w %s"
 L["|cFF33DD33%s|r is going to fulfill your order: %s"]  = "|cFF33DD33%s|r va honorer ta commande : %s"
+L["Validate"]                                           = "Valider"
+L["Order received: %s"]                                 = "Commande reçue : %s"
+L["Order delivered: %s to %s"]                          = "Commande livrée : %s à %s"
+L["Partial delivery received: %s (x%d left)"]           = "Livraison partielle reçue : %s (x%d restant)"
+L["Partial delivery: %s to %s (x%d left)"]              = "Livraison partielle : %s à %s (x%d restant)"
+L["Validate = delivered (removes the order for everyone)"] = "Valider = livré (retire la commande pour tout le monde)"
 
 -- TradeScanner_BagSell (popup WTS depuis le sac)
 L["Sell to Guild Economy"]                               = "Vendre sur Guild Economy"

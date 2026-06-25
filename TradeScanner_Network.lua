@@ -11,16 +11,46 @@ local HELLO_DELAY = 5      -- secondes après login (attendre stabilité)
 local OFFER_TICK  = 0.1    -- secondes entre envois staggered
 local MAX_OFFERS  = 50     -- max offres envoyées par sync
 
+local HELLO_RESPOND_THROTTLE = 10   -- s : un seul HI honoré par fenêtre (logins groupés)
+local HELLO_JITTER           = 3    -- s : étalement aléatoire des réponses au HI
+local SEND_INTERVAL          = 0.15 -- s entre 2 AddonMessage (~6-7 msg/s, sous le plafond client)
+
 -- ============================================================
 -- ENVOI
 -- ============================================================
 
 -- Envoi guilde locale (canal addon). Jamais soumis à ADDON_ACTION_BLOCKED.
-function NET:Send(payload)
-    if not payload or payload == "" then return end
+-- File FIFO throttlée : le client WoW a un plafond caché de débit d'AddonMessage,
+-- au-delà duquel des messages sont DROPPÉS silencieusement (→ resync incomplète).
+-- On borne donc le débit sortant global, quelle que soit la source (events isolés
+-- + tickers de resync staggered). 1er message immédiat (latence ~0 pour un envoi
+-- isolé), les suivants espacés de SEND_INTERVAL. Ordre préservé.
+local sendQueue = {}
+local sendBusy  = false
+
+local function RawSend(payload)
     if C_ChatInfo and C_ChatInfo.SendAddonMessage then
         C_ChatInfo.SendAddonMessage(PREFIX, payload, "GUILD")
     end
+end
+
+local function PumpSend()
+    if sendBusy then return end
+    local payload = table.remove(sendQueue, 1)
+    if not payload then return end
+    RawSend(payload)
+    sendBusy = true
+    C_Timer.After(SEND_INTERVAL, function()
+        sendBusy = false
+        PumpSend()
+    end)
+end
+
+function NET:Send(payload)
+    if not payload or payload == "" then return end
+    if not (C_Timer and C_Timer.After) then return RawSend(payload) end
+    sendQueue[#sendQueue + 1] = payload
+    PumpSend()
 end
 
 -- Envoi à la confédération (guildes sœurs) via GreenWall.
@@ -49,14 +79,17 @@ local function GetAddonVersion()
     return (f and f("TradeScanner", "Version")) or "?"
 end
 
--- Ping de présence "qui est en ligne ?" — déclenché par un clic (onglet Orders),
--- donc envoyable aussi à la confédération. Throttlé pour éviter le spam.
+-- Ping de présence "qui est en ligne ?" — déclenché par un clic (onglet Orders).
+-- Volontairement GUILDE-LOCALE : la réponse IM ne peut PAS traverser GreenWall
+-- (émise depuis un handler réseau, hors hardware event). Un WHO confédéral ferait
+-- donc répondre les 11 guildes sœurs dans LEUR propre canal, pour des IM que
+-- l'émetteur ne reçoit jamais → amplification pure (cf. doc charge à l'échelle).
+-- On garde WHO local comme HI. Throttlé pour éviter le spam.
 function NET:BroadcastWho()
     local now = GetTime()
     if self.lastWho and (now - self.lastWho) < 5 then return end
     self.lastWho = now
     self:Send("WHO")
-    self:SendConfederation("WHO")  -- pile de clic = hardware event
 end
 
 -- Réponse de présence : "IM|prof1,prof2|version". Émise depuis un handler
@@ -149,18 +182,59 @@ function NET:BroadcastAccept(crafter, buyer, kind, id)
     self:SendConfederation(payload)
 end
 
--- Envoie toutes les commandes actives staggered (réponse à HI)
+-- Validation/livraison : "CF|buyer|kind|id|delivered" → décrémente la quantité ;
+-- retirée partout quand il ne reste rien. `delivered` = quantité livrée (>=1).
+-- localOnly = true ⇒ pas de relais GreenWall (appel hors hardware event, ex. trade auto).
+function NET:BroadcastFulfill(buyer, kind, id, delivered, localOnly)
+    if not buyer or not id then return end
+    local payload = string.format("CF|%s|%s|%d|%d", buyer, kind or "I", id, delivered or 0)
+    self:Send(payload)
+    if not localOnly then self:SendConfederation(payload) end
+end
+
+-- Envoie MES commandes actives staggered (réponse à HI).
+-- On ne rebroadcast QUE les commandes dont je suis l'auteur (o.buyer == moi),
+-- comme BroadcastOffer ignore déjà les offres source=="network" : sinon chaque
+-- membre réémettrait toute la liste confédérale (jusqu'à MAX_OFFERS) à CHAQUE
+-- login de la guilde → tempête O(k×liste). Chaque auteur porte sa resync ;
+-- une commande dont l'auteur est hors-ligne resync à son prochain login.
 function NET:SendAllOrdersDelayed()
-    local orders = (TS.db and TS.db.craftOrders) or {}
+    local me   = UnitName("player") or "?"
+    local mine = {}
+    for _, o in ipairs((TS.db and TS.db.craftOrders) or {}) do
+        if o.buyer == me then mine[#mine + 1] = o end
+    end
     local sent = 0
     C_Timer.NewTicker(OFFER_TICK, function(ticker)
-        if sent >= #orders or sent >= MAX_OFFERS then
+        if sent >= #mine or sent >= MAX_OFFERS then
             ticker:Cancel()
             return
         end
         sent = sent + 1
-        if TS.Net then TS.Net:BroadcastOrder(orders[sent]) end
+        if TS.Net then TS.Net:BroadcastOrder(mine[sent]) end
     end, MAX_OFFERS)
+end
+
+-- Réponse à un HELLO reçu : resync de MES offres/commandes + annonce de mes métiers.
+-- Deux protections d'échelle (cf. doc charge à l'échelle) :
+--   • Throttle : un seul HI honoré par fenêtre — si plusieurs membres se loguent
+--     en rafale, on ne relance pas N jeux de tickers de resync concurrents.
+--   • Jitter : délai initial aléatoire — quand 50 membres reçoivent le MÊME HI, on
+--     évite que tous démarrent leur resync au même instant (burst synchronisé).
+function NET:RespondToHello()
+    local now = GetTime()
+    if self.lastHelloResp and (now - self.lastHelloResp) < HELLO_RESPOND_THROTTLE then
+        return
+    end
+    self.lastHelloResp = now
+    C_Timer.After(math.random() * HELLO_JITTER, function()
+        NET:SendAllOffersDelayed()
+        NET:SendAllOrdersDelayed()
+        if TS.Guild then
+            if not TS.Guild.myProfessions then TS.Guild:DetectMyProfessions() end
+            NET:BroadcastProfessions(TS.Guild.myProfessions)
+        end
+    end)
 end
 
 -- ============================================================
@@ -174,15 +248,14 @@ local function GetPlayerShort(fullName)
 end
 
 function NET:_HandleOF(message)
-    local parts = {}
-    for part in message:gmatch("([^|]+)") do table.insert(parts, part) end
-    if #parts < 6 then return end
-    local player     = parts[1]
-    local offerType  = parts[2]
-    local itemID     = tonumber(parts[3])
-    local priceValue = tonumber(parts[4]) or 0
-    local priceText  = parts[5]
-    local timestamp  = tonumber(parts[6]) or time()
+    -- Match ancré (comme CO/CC/CA) : le split naïf "[^|]+" comptait le token "OF"
+    -- comme 1er champ (décalage) et avalait les champs vides (priceText ""), cf. bug v1.3.4.
+    local player, offerType, itemID, priceValue, priceText, timestamp =
+        message:match("^OF|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)$")
+    if not player then return end
+    itemID     = tonumber(itemID)
+    priceValue = tonumber(priceValue) or 0
+    timestamp  = tonumber(timestamp) or time()
     local cat, prof
     if itemID then cat, prof = TS:GetProducible(itemID) end
     TS:AddOffer({
@@ -196,12 +269,9 @@ function NET:_HandleOF(message)
 end
 
 function NET:_HandleDN(message)
-    local parts = {}
-    for part in message:gmatch("([^|]+)") do table.insert(parts, part) end
-    if #parts >= 2 then
-        local itemID = tonumber(parts[2])
-        if itemID then TS:MarkDone(parts[1], itemID, true) end
-    end
+    -- Match ancré : "DN|player|itemID" (l'ancien split prenait "DN" comme player).
+    local player, itemID = message:match("^DN|([^|]+)|(%d+)")
+    if player and itemID then TS:MarkDone(player, tonumber(itemID), true) end
 end
 
 function NET:_HandleCO(message)
@@ -224,6 +294,15 @@ function NET:_HandleCO(message)
     TS.Guild:AddOrder(o, true)
 end
 
+function NET:_HandleCF(message)
+    local buyer, kind, id, delivered = message:match("^CF|([^|]+)|([^|]+)|(%d+)|?(%d*)")
+    if TS.Guild and buyer and id then
+        delivered = tonumber(delivered)  -- nil/0 = livraison complète (compat)
+        if delivered == 0 then delivered = nil end
+        TS.Guild:FulfillOrder(buyer, (kind == "E" and "e" or "i") .. id, delivered, true)
+    end
+end
+
 function NET:HandleMessage(senderName, message)
     if not message or message == "" then return end
     local playerShort = GetPlayerShort(senderName)
@@ -233,12 +312,7 @@ function NET:HandleMessage(senderName, message)
     if TS.Guild and playerShort then TS.Guild:MarkSeen(playerShort) end
 
     if cmd == "HI" then
-        self:SendAllOffersDelayed()
-        self:SendAllOrdersDelayed()
-        if TS.Guild then
-            if not TS.Guild.myProfessions then TS.Guild:DetectMyProfessions() end
-            self:BroadcastProfessions(TS.Guild.myProfessions)
-        end
+        self:RespondToHello()
 
     elseif cmd == "WHO" then
         -- Ping de présence : je réponds qui je suis (métiers + version).
@@ -277,6 +351,8 @@ function NET:HandleMessage(senderName, message)
         if TS.Guild and crafter and buyer and id then
             TS.Guild:AcceptOrder(buyer, (kind == "E" and "e" or "i") .. id, true, crafter)
         end
+
+    elseif cmd == "CF" then self:_HandleCF(message)
     end
 end
 
@@ -287,6 +363,15 @@ end
 function NET:Init()
     if not C_ChatInfo or not C_ChatInfo.RegisterAddonMessagePrefix then
         return  -- trop vieux ou pas dispo
+    end
+
+    -- Graine RNG dépendante du perso : le jitter des réponses au HI doit DIFFÉRER
+    -- d'un client à l'autre (math.random non semé = même séquence → aucun étalement).
+    if math.randomseed then
+        local seed = (time and time() or 0)
+        local n = UnitName and UnitName("player")
+        if n then for i = 1, #n do seed = seed + n:byte(i) * i end end
+        math.randomseed(seed)
     end
 
     C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
@@ -310,7 +395,7 @@ function NET:Init()
     -- on réessaie l'enregistrement jusqu'à ce qu'elle réponde.
     self:RegisterGreenWall()
 
-    -- HELLO initial (2s après login)
+    -- HELLO initial (HELLO_DELAY = 5s après login)
     C_Timer.After(HELLO_DELAY, function()
         NET:BroadcastHello()
     end)

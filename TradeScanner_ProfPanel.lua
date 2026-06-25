@@ -149,10 +149,13 @@ local function PPRowTooltip(r)
         end
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine(string.format("|cFFFFCC00%s|r veut x%d  %s", o.buyer, o.qty or 1, o.priceText or ""), 1, 1, 1)
+        local me = UnitName("player") or "?"
         if o.status == "accepted" then
             GameTooltip:AddLine("|cFF33DD33" .. L["Accepted by "] .. (o.acceptedBy or "?") .. "|r")
         end
-        if r.entry.mineOrder then
+        if o.status == "accepted" and (o.acceptedBy == me or o.buyer == me) then
+            GameTooltip:AddLine("|cFF888888" .. L["Validate = delivered (removes the order for everyone)"] .. "|r")
+        elseif r.entry.mineOrder then
             GameTooltip:AddLine("|cFF888888" .. L["Your order — click to cancel"] .. "|r")
         else
             GameTooltip:AddLine("|cFF888888" .. string.format(L["Click to accept (whisper %s)"], o.buyer) .. "|r")
@@ -292,8 +295,12 @@ local function FillRow(row, item)
         local o   = item.order
         local key = TS.Guild:OrderKey(o)
         row.nameFS:SetWidth(130); row.nameFS:SetText(item.name); row.cntFS:SetText("")
+        local me  = UnitName("player") or "?"
         local btn = row.actionBtn; btn:Show()
-        if item.mineOrder then
+        if o.status == "accepted" and (o.acceptedBy == me or o.buyer == me) then
+            btn:SetText(L["Validate"])
+            btn:SetScript("OnClick", function() TS.Guild:FulfillOrder(o.buyer, key, nil, false, false) end)
+        elseif item.mineOrder then
             btn:SetText("Cancel")
             btn:SetScript("OnClick", function() TS.Guild:CancelOrder(o.buyer, key, false) end)
         else

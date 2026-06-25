@@ -214,8 +214,7 @@ end
 function TS:MarkDone(player, itemID, fromNetwork)
     if not player or not itemID then return end
     self.db.doneOffers[player.."_"..tostring(itemID)] = true
-    if self.UI then self.UI:Refresh() end
-    if self.ProfPanel and self.ProfPanel.Refresh then self.ProfPanel:Refresh() end
+    self:RequestRefresh()
     if not fromNetwork and self.Net then self.Net:BroadcastDone(player, itemID) end
 end
 
@@ -241,7 +240,7 @@ function TS:AddOffer(offer)
                 end
                 table.remove(db.offers, i)
                 table.insert(db.offers, 1, existing)
-                if self.UI then self.UI:Refresh() end
+                self:RequestRefresh()
                 return
             end
         end
@@ -253,7 +252,7 @@ function TS:AddOffer(offer)
                 existing.timestamp = offer.timestamp
                 table.remove(db.offers, i)
                 table.insert(db.offers, 1, existing)
-                if self.UI then self.UI:Refresh() end
+                self:RequestRefresh()
                 return
             end
         end
@@ -265,7 +264,7 @@ function TS:AddOffer(offer)
        and self:CanFulfill(offer.sellCategory, offer.profession) then
         self:AlertCraftable(offer)
     end
-    if self.UI then self.UI:Refresh() end
+    self:RequestRefresh()
     if self.Net and offer.source ~= "network" then self.Net:BroadcastOffer(offer) end
 end
 

@@ -320,7 +320,10 @@ function OP:RefreshOrders()
             row.fs:SetText(string.format("%s x%d %s%s",
                 nm, o.qty or 1, o.priceText and ("|cFFFFCC00" .. o.priceText .. "|r") or "", accepted))
             row.btn:Show()
-            if item.mine then
+            if o.status == "accepted" and (o.acceptedBy == me or o.buyer == me) then
+                row.btn:SetText(L["Validate"])
+                row.btn:SetScript("OnClick", function() TS.Guild:FulfillOrder(o.buyer, key, nil, false, false) end)
+            elseif item.mine then
                 row.btn:SetText("Cancel")
                 row.btn:SetScript("OnClick", function() TS.Guild:CancelOrder(o.buyer, key, false) end)
             else
