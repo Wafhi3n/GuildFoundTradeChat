@@ -74,7 +74,7 @@ function MM:Build()
 
     local icon = btn:CreateTexture(nil, "ARTWORK")
     icon:SetSize(20, 20)
-    icon:SetPoint("CENTER", 0, 0)
+    icon:SetPoint("CENTER", btn, "CENTER", 0, 0)
     icon:SetTexture("Interface\\Icons\\INV_Misc_Bag_08")
     self.icon = icon
 
@@ -103,18 +103,17 @@ function MM:SetAlert(active)
     if not self.btn then return end
     if active then
         self.pendingAlerts = (self.pendingAlerts or 0) + 1
-        self.alertRing:Show()
         self.icon:SetVertexColor(1, 0.78, 0)
         local t = 0
         self.btn:SetScript("OnUpdate", function(_, dt)
             t = t + dt
-            local alpha = 0.55 + 0.45 * math.abs(math.sin(t * math.pi))
-            self.alertRing:SetAlpha(alpha)
+            local v = 0.6 + 0.4 * math.abs(math.sin(t * math.pi))
+            self.border:SetVertexColor(1, 0.78 * v, 0)
         end)
     else
         self.pendingAlerts = 0
-        self.alertRing:Hide()
         self.btn:SetScript("OnUpdate", nil)
+        self.border:SetVertexColor(1, 1, 1)
         self.icon:SetVertexColor(1, 1, 1)
     end
 end
