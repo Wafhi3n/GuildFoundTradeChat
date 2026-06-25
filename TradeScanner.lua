@@ -338,6 +338,7 @@ eventFrame:RegisterEvent("TRADE_SKILL_CLOSE")
 eventFrame:RegisterEvent("CRAFT_SHOW")
 eventFrame:RegisterEvent("CRAFT_UPDATE")
 eventFrame:RegisterEvent("CRAFT_CLOSE")
+eventFrame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 
 -- Debounced profession scan: avoids stacking C_Timer.After on UPDATE bursts.
 local scanPending = false
@@ -405,5 +406,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
 
     elseif event == "TRADE_SKILL_CLOSE" or event == "CRAFT_CLOSE" then
         if TS.ProfPanel then TS.ProfPanel:OnTradeSkillClose() end
+
+    elseif event == "GET_ITEM_INFO_RECEIVED" then
+        -- Un objet d'offre réseau vient d'être résolu côté client → refresh pour
+        -- remplacer le placeholder par le vrai nom (coalescé + gardé). (hotfix 1.5.2)
+        TS:RequestRefresh()
     end
 end)

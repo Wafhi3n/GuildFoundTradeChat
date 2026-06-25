@@ -285,6 +285,19 @@ function UI:_FillRow(row, offer)
     else                              row.typeFS:SetText(srcTag .. "|cFF33AAFFWTB|r") end
     if offer.itemLink then
         row.itemFS:SetText(offer.itemLink)
+    elseif offer.itemID then
+        -- Offre réseau (itemID sans lien) : résoudre le nom EN DIRECT. S'il n'est pas
+        -- encore en cache client, déclencher le chargement et afficher un placeholder ;
+        -- GET_ITEM_INFO_RECEIVED relancera un refresh quand l'info arrive (cf. 1.5.2).
+        local name = GetItemInfo(offer.itemID)
+        if name then
+            row.itemFS:SetText(name)
+        else
+            if C_Item and C_Item.RequestLoadItemDataByID then
+                C_Item.RequestLoadItemDataByID(offer.itemID)
+            end
+            row.itemFS:SetText("|cFF888888" .. (SEARCH_LOADING_TEXT or "…") .. "|r")
+        end
     elseif offer.itemName then
         row.itemFS:SetText(offer.itemName)
     else

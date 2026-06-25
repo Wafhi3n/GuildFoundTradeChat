@@ -276,7 +276,9 @@ function NET:_HandleOF(message)
     if itemID then cat, prof = TS:GetProducible(itemID) end
     TS:AddOffer({
         offerType    = offerType, player = player, itemID = itemID,
-        itemName     = itemID and TS:GetItemName(itemID) or nil,
+        -- nil si l'objet n'est pas encore en cache (résolu à l'affichage) ; l'appel
+        -- GetItemInfo déclenche aussi le chargement asynchrone. (hotfix 1.5.2)
+        itemName     = (GetItemInfo(itemID)),
         itemLink     = nil, priceText = (priceText ~= "" and priceText) or nil,
         priceValue   = priceValue, rawMsg = nil, timestamp = timestamp,
         canCraft     = cat ~= nil, sellCategory = cat, profession = prof,
