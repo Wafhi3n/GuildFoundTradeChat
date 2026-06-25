@@ -33,19 +33,25 @@ Even better, validation can be automatic: if the buyer also runs the addon, **co
 
 Need to sell something?
 
-Simply Alt + Right-Click an item in your bags to create a WTS listing. Set quantity, price, and notes through a simple popup. Listings are automatically shared with other TradeScanner users.
+Alt + Right-Click bag items to stack them in a mail-style composer, set a price and quantity per item, then post the whole batch at once. The trade-channel message is automatically split to stay under the chat character limit, and selling an item also flags it as sellable so matching requests light up. Listings are instantly shared with other TradeScanner users.
+
+**Auction-House-Style Browse**
+
+Find what you want fast with a familiar AH-like interface:
+
+• Category sidebar (item class → subclass → armor slot) • Quality and required-level filters • Sortable columns (Type / Item / Price / Player / Age) • Name search
 
 **Organized Trading Interface**
 
-Browse opportunities through five dedicated tabs:
+Browse opportunities through six dedicated tabs:
 
-• All • Sales (WTS) • Wanted (WTB) • Sellable (requests you can fulfill) • Orders (craft requests)
+• All • Sales (WTS) • Wanted (WTB) • Gifts (WTG — free giveaways) • Sellable (requests you can fulfill) • Orders (craft requests, with online crafters on top)
 
 Smart deduplication keeps the list clean by tracking a single active offer per player and item.
 
 **Additional Features**
 
-• Guild chat and custom trade channel monitoring • English and French keyword support (WTS, WTB, VDS, ACH, CHERCHE, B>, and more) • International price parsing (1.5g, 1,5g, 1.50g) • Guild profession directory (/ts profs) • Persistent message history and debug tools • Trade-window order validation with partial-delivery tracking • Addon-to-addon synchronization network • Fully configurable channels, keywords, and notifications
+• Multi-channel monitoring (watch as many trade channels as you like) + guild chat • Settings panel (gear button) for channels, toggles, and your sellable list • New-version alert when a guildmate runs a newer build • English and French keyword support (WTS, WTB, WTG, VDS, ACH, CHERCHE, B>, and more) • International price parsing (1.5g, 1,5g, 1.50g) • Guild profession directory (/ts profs) • Cross-guild profession sharing over GreenWall • Persistent message history and debug tools • Trade-window order validation with partial-delivery tracking • Addon-to-addon synchronization network • Fully configurable channels, keywords, and notifications
 
 **Commands**
 

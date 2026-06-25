@@ -96,7 +96,8 @@ AddOn »).
 
 | Trafic | Déclencheur | Transport |
 |---|---|---|
-| `HI`, `OF`, `DN`, `PR`, `IM` | timer / event / réception réseau | **guilde locale uniquement** (`SendAddonMessage`) |
+| `HI`, `OF`, `DN`, `IM` | timer / event / réception réseau | **guilde locale uniquement** (`SendAddonMessage`) |
+| `PR` (métiers + version) | resync (HI/event) **ou** clic (annonce) | local ; **+ confédération sur clic** (annonce proactive via `BroadcastWho`, sans réponse → pas d'amplification) |
 | `WHO` (présence) | clic, **mais gardé local** | **guilde locale uniquement** (cf. §8) |
 | `CO` (placement) | clic sur *Order* | local **+** confédération |
 | `CC` / `CA` | clic sur *Cancel* / *Accept* | local **+** confédération |
@@ -105,12 +106,13 @@ AddOn »).
 > Règle pratique : **ne jamais router vers `SendConfederation` un message issu d'un timer,
 > d'un `OnEvent` ou d'un handler de réception réseau.** Si l'envoi cross-guilde doit suivre une
 > réception (ex. répondre à un `HI` ou à un `WHO`), il restera bloqué — c'est pourquoi
-> `HI`/`OF`/`DN`/`PR`/`IM` ne partent qu'en local.
+> `HI`/`OF`/`DN`/`IM` (et les **resync** `PR`) ne partent qu'en local.
 >
 > **`WHO` est lui aussi gardé local** alors qu'il part d'un clic : sa réponse `IM` ne pouvant
 > pas traverser GreenWall (émise depuis un handler de réception), un `WHO` confédéral ne ferait
-> qu'amplifier le trafic des guildes sœurs sans bénéfice pour l'émetteur (cf. §8). Le seul push
-> cross-guilde provient donc des **commandes** (`CO`/`CC`/`CA`/`CF`), toutes déclenchées par un clic.
+> qu'amplifier le trafic des guildes sœurs sans bénéfice pour l'émetteur (cf. §8). Les push
+> cross-guilde proviennent donc des **commandes** (`CO`/`CC`/`CA`/`CF`) et de l'**annonce de mes
+> métiers** (`PR` via `BroadcastWho`) — toutes déclenchées par un clic, toutes sans réponse attendue.
 
 ### Pas d'envoi fiable hors-combat non plus
 
@@ -269,6 +271,11 @@ Contexte cible : **~12 co-guildes de ~1000 membres**. Le point clé tient en une
    son prochain login — acceptable, le statut n'était de toute façon pas porté par le resync `CO`.*
 2. **`WHO` gardé local.** Suppression du `SendConfederation("WHO")` dans `NET:BroadcastWho`.
    La présence cross-guilde via `WHO` était structurellement inutile (l'`IM` ne revient pas).
+   *Ajout v1.5 :* `BroadcastWho` (toujours appelé sur clic = hardware event) **pousse en plus MES
+   propres métiers en cross-guilde** via `NET:BroadcastProfessions(nil, true)` → `PR` confédéral.
+   C'est une **annonce** (pas une requête) : aucune réponse attendue donc **pas d'amplification**,
+   contrairement à `WHO`. C'est ce qui permet aux guildes sœurs d'apprendre nos métiers, que les
+   réponses auto (`IM`/`PR` hors hardware event) ne peuvent pas leur transmettre.
 3. **Refresh d'UI coalescé + gardé.** `TS:RequestRefresh()` (core) regroupe les rafales en **un
    seul** rebuild après 0,2 s et ne touche la fenêtre d'offres **que si visible**. Tous les
    chemins de réception réseau (`AddOffer`, `MarkDone`, `AddOrder`, `UpdateRoster`,

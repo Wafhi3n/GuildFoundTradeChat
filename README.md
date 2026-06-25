@@ -17,14 +17,17 @@ World of Warcraft\_classic_era_\Interface\AddOns\
 
 ## Features
 
-- **Monitors a configurable trade channel** (default: `freshtrade`) and **/g guild chat** (GreenWall-compatible)
-- **Detects WTS / WTB / WTT** messages with fully configurable keywords (EN + FR by default)
+- **Monitors multiple trade channels** (default: `freshtrade`) and **/g guild chat** (GreenWall-compatible) — add as many watched channels as you like
+- **Detects WTS / WTB / WTT / WTG** messages with fully configurable keywords (EN + FR by default), including **gifts/giveaways** (WTG, FREE, GRATUIT…)
+- **Auction-house-style browse** — a category sidebar (item class → subclass → armor slot) plus **quality** and **required-level** filters and **sortable columns** (Type / Item / Price / Player / Age)
 - **Profession integration** — open any profession window and the addon indexes your recipes; chat requests you can fulfill are highlighted in gold (Enchanting / Beast Training supported via the Classic **Craft** API, not just TradeSkill)
 - **Static profession database** — 10 professions, ~1100 craftable items + ~130 enchants, so the addon knows who can make what even before anyone scans
-- **Guild Craft Orders** (`/ts order`) — order an item or enchant from the guild out-of-band; crafters of the right profession get an alert and can Accept (auto-whisper to the buyer)
+- **Guild Craft Orders** (`/ts order`) — order an item or enchant from the guild out-of-band; crafters of the right profession get an alert and can Accept (auto-whisper to the buyer). Online crafters of the selected profession are listed at the top
 - **Order validation & delivery tracking** — once accepted, a **Validate** button lets the crafter or buyer mark an order delivered, which removes it for everyone. If the buyer also runs the addon, **completing the trade auto-validates** it; a **partial hand-over decrements the remaining quantity** network-wide instead of closing the order
-- **Cross-realm sync via GreenWall** — offers stay guild-local, but craft orders propagate across the whole confederation (sister guilds, cross-server). See [Documentation/GreenWall-Integration.md](Documentation/GreenWall-Integration.md)
-- **Sell from your bags** — Alt + right-click a bag item to post a WTS (popup for price / qty / note); the offer is also shared with other addon users
+- **Cross-realm sync via GreenWall** — offers stay guild-local, but craft orders **and professions** propagate across the whole confederation (sister guilds, cross-server). See [Documentation/GreenWall-Integration.md](Documentation/GreenWall-Integration.md)
+- **Multi-item sell from your bags** — Alt + right-click bag items to stack them in a **mail-style composer** (price / qty per item), then post them all at once. The chat message auto-splits under the 255-character limit and is tagged `[Guild Economy]`; selling an item also flags it as sellable
+- **Settings panel** — a gear button (or `/ts settings`) to manage watched channels, the send channel, toggles, and your sellable list
+- **New-version alert** — get notified once per session when a guildmate runs a newer version
 - **Craft alerts** — sound + minimap icon pulse when a new request matches something you can make
 - **Deduplication** — each player appears only once per item; entries update if they repost
 - **Draggable minimap button**, **click-to-whisper**, **decimal price parsing** (`1.5g`, `1,5g`, `1.50g`…), and a **persistent message log** for debugging
@@ -33,15 +36,18 @@ World of Warcraft\_classic_era_\Interface\AddOns\
 
 ## Interface
 
-5 tabs:
+6 tabs:
 
 | Tab | Content |
 |---|---|
 | **All** | Every offer from the last 30 minutes |
 | **Sales (WTS)** | Sellers only |
 | **Wanted (WTB)** | Buyers only |
+| **Gifts (WTG)** | Free giveaways (Want To Give) |
 | **Sellable (N)** | WTB requests for items **you** can personally supply (counter updates in real time) |
-| **Orders** | Guild Craft Orders + online addon users + chat requests for the selected profession |
+| **Orders** | Guild Craft Orders + online crafters of the selected profession + chat requests |
+
+The offer tabs feature an **auction-house-style left sidebar**: pick an item category (e.g. Armor → Cloth → Head) to filter the list, narrow by **quality** and **required level**, and click any column header to **sort** (▲▼). A **Filter** box (top-right) and a **gear button** (settings) round out the window.
 
 The minimap button pulses gold and shows a tooltip with the pending count when new requests you can fulfill come in. Opening the **Sellable** tab resets the alert.
 
@@ -54,19 +60,21 @@ The minimap button pulses gold and shows a tooltip with the pending count when n
 | Command | Effect |
 |---|---|
 | `/ts` | Open / close the main window |
+| `/ts settings` | Open the settings panel (channels, toggles, sellable list) |
 | `/ts order` | Open the Guild Craft Orders panel |
 | `/ts profs` | Show my professions + known guild roster |
 | `/ts scan` | Manually scan the currently open profession window |
 | `/ts sell <shift-click>` | Add / remove a manual "sellable" item |
 | `/ts exclude <shift-click>` | Exclude / include an item from scan results |
-| `/ts channel <name>` | Set the watched channel (default: `freshtrade`) |
+| `/ts channel <name>` | Set the default **send** channel (default: `freshtrade`) |
+| `/ts channel add\|remove\|list <name>` | Manage the **watched** channels |
 | `/ts guild` | Toggle guild chat scanning (GreenWall) |
 | `/ts wts` | Toggle the bag Alt-right-click WTS shortcut |
 | `/ts confed` | Toggle cross-realm sync (GreenWall confederation) |
 | `/ts gwdebug` | Toggle GreenWall send / receive debug prints |
 | `/ts alert` | Toggle craft alert sound |
-| `/ts add sell\|buy <WORD>` | Add a keyword |
-| `/ts remove sell\|buy <WORD>` | Remove a keyword |
+| `/ts add sell\|buy\|gift <WORD>` | Add a keyword |
+| `/ts remove sell\|buy\|gift <WORD>` | Remove a keyword |
 | `/ts keywords` | List active keywords |
 | `/ts clear` | Clear all stored offers |
 | `/ts debug` | Toggle real-time channel message output in chat |
@@ -98,8 +106,9 @@ All messages from the watched channel are logged to a separate SavedVariable (`T
 |---|---|
 | `sell` | Captured as a sale offer |
 | `buy` | Captured as a buy request |
+| `gift` | Captured as a gift / giveaway (WTG) |
 | `skip_kw` | Channel matched but no keyword found |
-| `skip_chan` | Wrong channel, ignored |
+| `skip_chan` | Not a watched channel, ignored |
 
 Use `/ts debug` to see results in real time, or `/ts log 50` to review recent history.
 
@@ -111,5 +120,6 @@ Use `/ts debug` to see results in real time, or `/ts log 50` to review recent hi
 |---|---|
 | Sell | `WTS`, `VDS`, `S>`, `VEND`, `SELL`, `LFW` |
 | Buy | `WTB`, `ACH`, `B>`, `ACHAT`, `BUY`, `CHERCHE`, `ISO`, `WTT`, `TROC` |
+| Gift | `WTG`, `GIFT`, `FREE`, `GRATUIT`, `DON` |
 
-`LFW` (looking for work) is treated as a **sell** (service offer); `WTT` / `TROC` (trade) are treated as **buy** (the poster wants to obtain an item). All keywords are **case-insensitive**. Add your own with `/ts add sell <WORD>` or `/ts add buy <WORD>`.
+`LFW` (looking for work) is treated as a **sell** (service offer); `WTT` / `TROC` (trade) are treated as **buy** (the poster wants to obtain an item); `WTG` / `FREE` / `GRATUIT` mark a **gift** (free giveaway). Sell and buy are matched first, so "WTS … free" stays a sale. All keywords are **case-insensitive**. Add your own with `/ts add sell|buy|gift <WORD>`.
