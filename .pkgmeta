@@ -1,6 +1,7 @@
 package-as: TradeScanner
 ignore:
   - CLAUDE.md
+  - CURSEFORGE.md
   - .gitignore
   - .pkgmeta
   - tools

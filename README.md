@@ -22,6 +22,7 @@ World of Warcraft\_classic_era_\Interface\AddOns\
 - **Profession integration** — open any profession window and the addon indexes your recipes; chat requests you can fulfill are highlighted in gold (Enchanting / Beast Training supported via the Classic **Craft** API, not just TradeSkill)
 - **Static profession database** — 10 professions, ~1100 craftable items + ~130 enchants, so the addon knows who can make what even before anyone scans
 - **Guild Craft Orders** (`/ts order`) — order an item or enchant from the guild out-of-band; crafters of the right profession get an alert and can Accept (auto-whisper to the buyer)
+- **Order validation & delivery tracking** — once accepted, a **Validate** button lets the crafter or buyer mark an order delivered, which removes it for everyone. If the buyer also runs the addon, **completing the trade auto-validates** it; a **partial hand-over decrements the remaining quantity** network-wide instead of closing the order
 - **Cross-realm sync via GreenWall** — offers stay guild-local, but craft orders propagate across the whole confederation (sister guilds, cross-server). See [Documentation/GreenWall-Integration.md](Documentation/GreenWall-Integration.md)
 - **Sell from your bags** — Alt + right-click a bag item to post a WTS (popup for price / qty / note); the offer is also shared with other addon users
 - **Craft alerts** — sound + minimap icon pulse when a new request matches something you can make
@@ -43,6 +44,8 @@ World of Warcraft\_classic_era_\Interface\AddOns\
 | **Orders** | Guild Craft Orders + online addon users + chat requests for the selected profession |
 
 The minimap button pulses gold and shows a tooltip with the pending count when new requests you can fulfill come in. Opening the **Sellable** tab resets the alert.
+
+**Craft order lifecycle:** `open` → **Accept** (auto-whispers the buyer) → **Validate** (delivered). Validating removes the order for everyone. If the buyer runs the addon, completing the trade validates automatically — a partial hand-over just lowers the remaining quantity network-wide.
 
 ---
 
