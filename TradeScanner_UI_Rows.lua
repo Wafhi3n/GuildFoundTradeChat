@@ -27,7 +27,8 @@ local function UIRowTooltip(r)
         GameTooltip:AddLine(r.offer.rawMsg or "", 1, 1, 1, true)
     end
     GameTooltip:AddLine(" ")
-    local typeLabel = r.offer.offerType == "sell" and "Sale" or "Wanted"
+    local ot = r.offer.offerType
+    local typeLabel = (ot == "sell" and "Sale") or (ot == "gift" and "Gift") or "Wanted"
     local srcLabel  = r.offer.source == "guild" and " |cFFFFAA00[Guild]|r" or " |cFF00CCFF[Channel]|r"
     GameTooltip:AddLine(typeLabel .. srcLabel .. " by |cFFFFFFFF" .. (r.offer.player or "?") .. "|r")
     if r.offer.priceText then

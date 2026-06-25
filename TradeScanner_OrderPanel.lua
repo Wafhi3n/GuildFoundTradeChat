@@ -14,6 +14,10 @@ local W, H        = 640, 470
 local ROW_H       = 16
 local CAT_ROWS    = 18
 local ORD_ROWS    = 18
+-- Hauteur visible (en lignes) des listes en mode EMBARQUÉ (onglet Orders de la
+-- fenêtre principale, plus basse que le panneau autonome) : évite que le catalogue
+-- et la liste de commandes débordent sur la barre Order/Qty/Price du bas (orderissue).
+local EMBED_ROWS  = 16
 
 function OP:_BuildCatalogPanel(f)
     local catHdr = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -345,7 +349,7 @@ function OP:_BuildEmbedCatalog(parent, E)
     catHdr:SetText("|cFFFFCC00Catalogue|r")
     E.catScroll = CreateFrame("ScrollFrame", "TradeScannerEmbedCatScroll", parent, "UIPanelScrollFrameTemplate")
     E.catScroll:SetPoint("TOPLEFT", 8, -90)
-    E.catScroll:SetSize(290, CAT_ROWS * ROW_H)
+    E.catScroll:SetSize(290, EMBED_ROWS * ROW_H)
     E.catContent = CreateFrame("Frame", nil, E.catScroll)
     E.catContent:SetSize(290, CAT_ROWS * ROW_H)
     E.catScroll:SetScrollChild(E.catContent)
@@ -365,7 +369,7 @@ function OP:_BuildEmbedOrders(parent, E)
     ordHdr:SetText("|cFFFFCC00" .. L["Orders"] .. "|r")
     E.ordScroll = CreateFrame("ScrollFrame", "TradeScannerEmbedOrdScroll", parent, "UIPanelScrollFrameTemplate")
     E.ordScroll:SetPoint("TOPLEFT", 322, -90)
-    E.ordScroll:SetSize(270, ORD_ROWS * ROW_H)
+    E.ordScroll:SetSize(270, EMBED_ROWS * ROW_H)
     local ordContent = CreateFrame("Frame", nil, E.ordScroll)
     ordContent:SetSize(270, ORD_ROWS * ROW_H * 4)
     E.ordScroll:SetScrollChild(ordContent)

@@ -60,11 +60,31 @@ end
 -- ------------------------------------------------------------------
 function OP:BuildOrderList(prof, me)
     local rows = {}
-    -- Section présence : membres de Guild Economy en ligne (global, tous métiers).
-    local online = TS.Guild:GetOnlineUsers()
-    rows[#rows + 1] = { header = "|cFF66FF99" ..
-        string.format(L["— Online (%d) —"], #online) .. "|r" }
-    for _, u in ipairs(online) do rows[#rows + 1] = { presence = u } end
+    -- Section présence en tête : crafters de Guild Economy EN LIGNE pour le métier
+    -- sélectionné (moi inclus si je l'ai). Sans métier sélectionné → tous les en-ligne.
+    local online   = TS.Guild:GetOnlineUsers()
+    local crafters = {}
+    for _, u in ipairs(online) do
+        local keep
+        if not prof then
+            keep = true
+        elseif u.isSelf then
+            keep = TS.Guild:IHaveProfession(prof)
+        else
+            for _, p in ipairs(u.professions or {}) do
+                if p == prof then keep = true; break end
+            end
+        end
+        if keep then crafters[#crafters + 1] = u end
+    end
+    if prof then
+        rows[#rows + 1] = { header = "|cFF66FF99" ..
+            string.format(L["— %s online (%d) —"], prof, #crafters) .. "|r" }
+    else
+        rows[#rows + 1] = { header = "|cFF66FF99" ..
+            string.format(L["— Online (%d) —"], #crafters) .. "|r" }
+    end
+    for _, u in ipairs(crafters) do rows[#rows + 1] = { presence = u } end
 
     local mine = TS.Guild:GetMyOrders()
     if #mine > 0 then

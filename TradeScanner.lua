@@ -17,6 +17,7 @@ local DEFAULTS = {
     keywords = {
         sell = { "WTS", "VDS", "S>", "VEND", "SELL", "LFW" },
         buy  = { "WTB", "ACH", "B>", "ACHAT", "BUY", "CHERCHE", "ISO", "WTT", "TROC" },
+        gift = { "WTG", "GIFT", "FREE", "GRATUIT", "DON" },
     },
 }
 
@@ -43,22 +44,27 @@ local function ApplyKeywordMigrations(db)
     end
 end
 
+-- Crée les listes de mots-clés manquantes (sell/buy/gift) et y injecte les valeurs
+-- par défaut tant qu'elles sont vides (anciennes DB → seed automatique des dons WTG).
+local function SeedKeywords(db)
+    if not db.keywords then db.keywords = {} end
+    for side, defaults in pairs(DEFAULTS.keywords) do
+        if not db.keywords[side] then db.keywords[side] = {} end
+        if #db.keywords[side] == 0 then
+            for _, v in ipairs(defaults) do table.insert(db.keywords[side], v) end
+        end
+    end
+end
+
 function TS:Init()
     if not TradeScannerDB then TradeScannerDB = {} end
     local db = TradeScannerDB
 
     if not db.channel      then db.channel       = DEFAULTS.channel end
-    if not db.keywords     then db.keywords       = {} end
-    if not db.keywords.sell then db.keywords.sell = {} end
-    if not db.keywords.buy  then db.keywords.buy  = {} end
-
-    -- Seed keyword lists that are still empty
-    if #db.keywords.sell == 0 then
-        for _, v in ipairs(DEFAULTS.keywords.sell) do table.insert(db.keywords.sell, v) end
-    end
-    if #db.keywords.buy == 0 then
-        for _, v in ipairs(DEFAULTS.keywords.buy) do table.insert(db.keywords.buy, v) end
-    end
+    -- v1.5 : multi-canaux. db.channel = canal d'ENVOI par défaut (BagSell / composeur) ;
+    -- db.channels = liste des canaux SURVEILLÉS au scan. Migration depuis l'unique canal.
+    if not db.channels or #db.channels == 0 then db.channels = { db.channel } end
+    SeedKeywords(db)  -- crée + seed sell/buy/gift au besoin
 
     if not db.offers        then db.offers        = {} end
     if not db.craftedItems  then db.craftedItems  = {} end
@@ -123,6 +129,90 @@ function TS:ClearExpired()
         if now - self.db.offers[i].timestamp > OFFER_EXPIRY then
             table.remove(self.db.offers, i)
         end
+    end
+end
+
+-- ============================================================
+-- CANAUX SURVEILLÉS (multi-canaux, v1.5)
+-- ============================================================
+
+-- True si un nom de canal reçu (déjà nettoyé du préfixe "N. " et en minuscules)
+-- correspond à l'un des canaux surveillés. Correspondance partielle tolérée comme
+-- avant ("freshtrade" matche une entrée "freshtrade").
+function TS:ChannelIsWatched(chanClean)
+    if not chanClean then return false end
+    chanClean = chanClean:lower()
+    for _, c in ipairs(self.db.channels or {}) do
+        if c ~= "" and chanClean:find(c:lower(), 1, true) then return true end
+    end
+    return false
+end
+
+-- Ajoute un canal à la liste surveillée (normalisé en minuscules, sans doublon).
+function TS:AddWatchedChannel(name)
+    name = (name or ""):gsub("^%s+", ""):gsub("%s+$", ""):lower()
+    if name == "" then return false end
+    self.db.channels = self.db.channels or {}
+    for _, c in ipairs(self.db.channels) do
+        if c == name then return false end
+    end
+    table.insert(self.db.channels, name)
+    return true
+end
+
+-- Retire un canal de la liste surveillée.
+function TS:RemoveWatchedChannel(name)
+    name = (name or ""):lower()
+    local list = self.db.channels or {}
+    for i = #list, 1, -1 do
+        if list[i] == name then table.remove(list, i); return true end
+    end
+    return false
+end
+
+-- Libellé compact des canaux surveillés (pour la barre de statut / labels).
+function TS:ChannelsLabel()
+    local list = self.db.channels or {}
+    if #list == 0 then return "?" end
+    return table.concat(list, ", ")
+end
+
+-- ============================================================
+-- VERSION (alerte de mise à jour, v1.5)
+-- ============================================================
+
+function TS:GetVersion()
+    local f = (C_AddOns and C_AddOns.GetAddOnMetadata) or _G.GetAddOnMetadata
+    return (f and f("TradeScanner", "Version")) or "?"
+end
+
+-- Compare deux versions "x.y.z". Retourne 1 si a>b, -1 si a<b, 0 si égales.
+function TS:CompareVersion(a, b)
+    local function parts(v)
+        local t = {}
+        for n in tostring(v or ""):gmatch("%d+") do t[#t + 1] = tonumber(n) end
+        return t
+    end
+    local pa, pb = parts(a), parts(b)
+    for i = 1, math.max(#pa, #pb) do
+        local x, y = pa[i] or 0, pb[i] or 0
+        if x ~= y then return x > y and 1 or -1 end
+    end
+    return 0
+end
+
+-- Si une version reçue (roster réseau) est plus récente que la mienne, alerte UNE
+-- seule fois par session que l'utilisateur doit se mettre à jour.
+function TS:NotifyIfNewerVersion(otherVersion)
+    if self._versionAlerted then return end
+    if not otherVersion or otherVersion == "" or otherVersion == "?" then return end
+    local mine = self:GetVersion()
+    if mine == "?" then return end
+    if self:CompareVersion(otherVersion, mine) > 0 then
+        self._versionAlerted = true
+        print("|cFF00CCFFGuild Economy|r " .. string.format(
+            self.L["A newer version (%s) is available — you have %s."], otherVersion, mine))
+        if self.db and self.db.alertSound then PlaySound(1191) end
     end
 end
 

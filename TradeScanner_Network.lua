@@ -90,6 +90,11 @@ function NET:BroadcastWho()
     if self.lastWho and (now - self.lastWho) < 5 then return end
     self.lastWho = now
     self:Send("WHO")
+    -- BroadcastWho n'est appelé QUE sur clic (minimap, onglet, Refresh) = hardware
+    -- event → on en profite pour pousser MES métiers en CROSS-GUILDE. Indispensable :
+    -- les guildes sœurs ne reçoivent jamais nos réponses IM/PR automatiques (émises
+    -- hors hardware event) donc sans cette poussée proactive elles ignorent nos métiers.
+    self:BroadcastProfessions(nil, true)
 end
 
 -- Réponse de présence : "IM|prof1,prof2|version". Émise depuis un handler
@@ -139,10 +144,14 @@ end
 -- Guilde : métiers (PR) + commandes de craft (CO / CC / CA)
 -- ------------------------------------------------------------------
 
--- Annonce mes métiers : "PR|prof1,prof2,..."
-function NET:BroadcastProfessions(professions)
-    local list = professions or {}
-    self:Send("PR|" .. table.concat(list, ","))
+-- Annonce mes métiers + version : "PR|prof1,prof2,...|version".
+-- fromUser=true ⇒ appel dans la pile d'un hardware event ⇒ propagation cross-guilde
+-- (GreenWall) en plus de la guilde locale. Voir BroadcastWho pour le déclencheur.
+function NET:BroadcastProfessions(professions, fromUser)
+    local list = professions or (TS.Guild and TS.Guild.myProfessions) or {}
+    local payload = "PR|" .. table.concat(list, ",") .. "|" .. GetAddonVersion()
+    self:Send(payload)
+    if fromUser then self:SendConfederation(payload) end
 end
 
 -- Nouvelle commande : "CO|buyer|kind|id|qty|priceValue|priceText|profession|name"
@@ -332,10 +341,11 @@ function NET:HandleMessage(senderName, message)
 
     elseif cmd == "PR" then
         if TS.Guild then
-            local body = message:match("^PR|(.*)$") or ""
+            -- "PR|profs|version" (version optionnelle : compat anciens clients "PR|profs").
+            local body, ver = message:match("^PR|([^|]*)|?(.*)$")
             local profs = {}
-            for p in body:gmatch("([^,]+)") do profs[#profs + 1] = p end
-            TS.Guild:UpdateRoster(playerShort, profs)
+            for p in (body or ""):gmatch("([^,]+)") do profs[#profs + 1] = p end
+            TS.Guild:UpdateRoster(playerShort, profs, ver ~= "" and ver or nil)
         end
 
     elseif cmd == "CO" then self:_HandleCO(message)

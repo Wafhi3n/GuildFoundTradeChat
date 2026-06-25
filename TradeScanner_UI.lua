@@ -9,25 +9,21 @@ local L  = TS.L
 -- CONSTANTES UI
 -- ============================================================
 
-local FRAME_W   = 700
+local FRAME_W   = 700   -- largeur de conception du TABLEAU d'offres (colonnes calées dessus)
 local FRAME_H   = 460
 local ROW_H     = 22
 local MAX_ROWS  = 18
 local TAB_W     = 128
+local SIDEBAR_W = 166   -- bande gauche « façon HdV » (arbre catégories + filtres qualité/niveau)
 
-local COLUMNS = {
-    { label = "Type",    w = 42,  x = 10  },
-    { label = "Item",    w = 215, x = 56  },
-    { label = "Price",   w = 88,  x = 275 },
-    { label = "Player",  w = 115, x = 367 },
-    { label = "Age",     w = 34,  x = 486 },
-    { label = "Provide", w = 120, x = 524 },
-}
+-- NB : la géométrie des colonnes vit dans TradeScanner_UI_Rows.lua (lignes) et
+-- TradeScanner_UI_Filters.lua (en-têtes triables) ; pas besoin d'une copie ici.
 
 local TABS = {
     { id = "all",    label = "All"          },
     { id = "wts",    label = "Sales (WTS)"  },
     { id = "buy",    label = "Wanted (WTB)" },
+    { id = "gift",   label = "Gifts (WTG)"  },
     { id = "sell",   label = "Sellable"     },
     { id = "orders", label = "Orders"       },
 }
@@ -68,6 +64,19 @@ function UI:_BuildTitleBar(f)
     local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     closeBtn:SetPoint("TOPRIGHT", -2, -2)
     closeBtn:SetScript("OnClick", function() f:Hide() end)
+    local gearBtn = CreateFrame("Button", nil, f)
+    gearBtn:SetSize(20, 20)
+    gearBtn:SetPoint("TOPLEFT", 8, -8)
+    gearBtn:SetNormalTexture("Interface\\Icons\\INV_Misc_Gear_01")
+    gearBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    gearBtn:SetScript("OnClick", function()
+        if TS.Settings then TS.Settings:Toggle() end
+    end)
+    gearBtn:SetScript("OnEnter", function(b)
+        GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+        GameTooltip:SetText(L["Settings"]); GameTooltip:Show()
+    end)
+    gearBtn:SetScript("OnLeave", GameTooltip_Hide)
     local searchLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     searchLabel:SetPoint("TOPRIGHT", -180, -14)
     searchLabel:SetText("|cFFAAAAAAFilter|r")
@@ -89,26 +98,26 @@ end
 
 function UI:_BuildOffersPane(f)
     local pane = CreateFrame("Frame", nil, f)
-    pane:SetPoint("TOPLEFT",     0, -70)
-    pane:SetPoint("BOTTOMRIGHT", 0,   0)
+    -- Décalé de SIDEBAR_W vers la droite : la bande gauche accueille la sidebar HdV.
+    -- Le tableau garde ses coordonnées internes calées sur FRAME_W (700).
+    pane:SetPoint("TOPLEFT",     SIDEBAR_W, -70)
+    pane:SetPoint("BOTTOMRIGHT", 0,          0)
     self.offersPane = pane
     MakeSeparator(pane, 0)
-    for _, col in ipairs(COLUMNS) do
-        local fs = pane:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        fs:SetPoint("TOPLEFT", col.x, -6)
-        fs:SetWidth(col.w)
-        fs:SetJustifyH("LEFT")
-        fs:SetText("|cFFAAAAAA" .. col.label .. "|r")
-    end
+    self:_BuildSortableHeaders(pane)  -- en-têtes cliquables (tri), cf. UI_Filters
     MakeSeparator(pane, -22)
     self:_BuildScrollRows(pane)
-    self:_BuildSellManagement(pane)
+    self:_BuildBottomButtons(pane)
 end
 
 function UI:_BuildOrdersPane(f)
     local pane = CreateFrame("Frame", nil, f)
-    pane:SetPoint("TOPLEFT",     0, -70)
-    pane:SetPoint("BOTTOMRIGHT", 0,   0)
+    -- Pane Orders aligné à gauche et borné à FRAME_W (l'embed garde sa géométrie
+    -- d'origine ; la sidebar HdV étant masquée sur cet onglet, la bande gauche sert
+    -- de marge). Évite que la barre Order/Qty/Price ne fuie à l'extrême droite.
+    pane:SetPoint("TOPLEFT",    0, -70)
+    pane:SetPoint("BOTTOMLEFT", 0,   0)
+    pane:SetWidth(FRAME_W)
     pane:Hide()
     self.ordersPane = pane
     if TS.OrderPanel then TS.OrderPanel:BuildEmbed(pane) end
@@ -133,50 +142,10 @@ function UI:_BuildScrollRows(pane)
     self.statusText = statusText
 end
 
-function UI:_BuildSellManagement(pane)
-    local sellLabel = pane:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    sellLabel:SetPoint("BOTTOMLEFT", 8, 11); sellLabel:SetText("|cFF88FF88Sell+|r")
-    local addBox = CreateFrame("EditBox", nil, pane, "InputBoxTemplate")
-    addBox:SetSize(180, 18); addBox:SetPoint("BOTTOMLEFT", 52, 10); addBox:SetAutoFocus(false)
-    addBox:SetScript("OnEscapePressed", function(box) box:SetText(""); box:ClearFocus() end)
-    self.addBox = addBox
-    local function DoAddSellable()
-        local txt    = addBox:GetText() or ""
-        local itemID = tonumber(txt:match("|Hitem:(%d+)")) or tonumber(txt:match("^%s*(%d+)%s*$"))
-        if itemID then
-            TS:AddManualSellable(itemID); addBox:SetText(""); addBox:ClearFocus()
-            UI:Refresh()
-            print("|cFF00CCFFGuild Economy|r " .. L["Sellable+: "] .. TS:GetItemName(itemID))
-        else
-            print("|cFF00CCFFGuild Economy|r " .. L["Shift-click an item or enter an item ID."])
-        end
-    end
-    addBox:SetScript("OnEnterPressed", DoAddSellable)
-    local addBtn = CreateFrame("Button", nil, pane, "UIPanelButtonTemplate")
-    addBtn:SetSize(50, 22); addBtn:SetPoint("LEFT", addBox, "RIGHT", 4, 0)
-    addBtn:SetText("Add"); addBtn:SetScript("OnClick", DoAddSellable)
-    local manageDrop = CreateFrame("Frame", "TradeScannerManageDrop", pane, "UIDropDownMenuTemplate")
-    manageDrop:SetPoint("LEFT", addBtn, "RIGHT", -6, -2)
-    UIDropDownMenu_SetWidth(manageDrop, 90); UIDropDownMenu_SetText(manageDrop, "Manage")
-    UIDropDownMenu_Initialize(manageDrop, function(_, level)
-        local info = UIDropDownMenu_CreateInfo()
-        info.isTitle = true; info.text = L["Manual sellable (click to remove)"]; info.notCheckable = true
-        UIDropDownMenu_AddButton(info, level)
-        local any = false
-        for itemID in pairs(TS.db.manualSellable or {}) do
-            any = true
-            local info2 = UIDropDownMenu_CreateInfo()
-            info2.text = TS:GetItemName(itemID); info2.notCheckable = true
-            info2.func = function() TS:RemoveManualSellable(itemID); UI:Refresh(); CloseDropDownMenus() end
-            UIDropDownMenu_AddButton(info2, level)
-        end
-        if not any then
-            local info3 = UIDropDownMenu_CreateInfo()
-            info3.text = "|cFF888888" .. L["(empty)"] .. "|r"; info3.notCheckable = true; info3.disabled = true
-            UIDropDownMenu_AddButton(info3, level)
-        end
-    end)
-    self.manageDrop = manageDrop
+-- Barre du bas : Refresh + Clear. Le bloc « Sell+ / Add / Manage » (vendable manuel)
+-- a été retiré d'ici (v1.5) — il est désormais géré dans le panneau Réglages et via
+-- /ts sell. La place libérée à gauche accueille la barre de filtres (cf. UI_Filters).
+function UI:_BuildBottomButtons(pane)
     local refreshBtn = CreateFrame("Button", nil, pane, "UIPanelButtonTemplate")
     refreshBtn:SetSize(90, 22); refreshBtn:SetPoint("BOTTOMRIGHT", -28, 8)
     refreshBtn:SetText("Refresh"); refreshBtn:SetScript("OnClick", function()
@@ -195,7 +164,7 @@ end
 function UI:Build()
     if self.frame then return end
     local f = CreateFrame("Frame", "TradeScannerMainFrame", UIParent, "BackdropTemplate")
-    f:SetSize(FRAME_W, FRAME_H); f:SetPoint("CENTER")
+    f:SetSize(FRAME_W + SIDEBAR_W, FRAME_H); f:SetPoint("CENTER")
     f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", f.StartMoving); f:SetScript("OnDragStop", f.StopMovingOrSizing)
     f:SetClampedToScreen(true); f:SetFrameStrata("MEDIUM"); f:SetFrameLevel(10); f:Hide()
@@ -210,6 +179,7 @@ function UI:Build()
     self:_BuildTabButtons(f)
     self:_BuildOffersPane(f)
     self:_BuildOrdersPane(f)
+    self:_BuildSidebar(f)  -- sidebar HdV (catégories + qualité + niveau), cf. UI_Categories
     self.frame = f
     self:SetTab("all")
     C_Timer.NewTicker(10, function()
@@ -262,6 +232,7 @@ function UI:SetTab(tabID)
     local isOrders = (tabID == "orders")
     if self.offersPane then self.offersPane:SetShown(not isOrders) end
     if self.ordersPane then self.ordersPane:SetShown(isOrders) end
+    if self.sidebar    then self.sidebar:SetShown(not isOrders) end
     if tabID == "sell" and TS.Minimap then TS.Minimap:SetAlert(false) end
     self:Refresh()
 end
@@ -276,26 +247,41 @@ function UI:_GetActiveOffers()
     if     tab == "all"  then offers = TS:GetOffers(nil,    false)
     elseif tab == "wts"  then offers = TS:GetOffers("sell", false)
     elseif tab == "buy"  then offers = TS:GetOffers("buy",  false)
+    elseif tab == "gift" then offers = TS:GetOffers("gift", false)
     elseif tab == "sell" then offers = TS:GetSellableOffers()
     end
-    if not (self.searchText and self.searchText ~= "") then return offers end
-    local needle   = self.searchText:lower()
-    local filtered = {}
-    for _, offer in ipairs(offers) do
-        local label = (offer.itemID and TS:GetItemName(offer.itemID, offer.itemName))
-                      or offer.itemName or offer.rawMsg or ""
-        if label:lower():find(needle, 1, true)
-           or (offer.player and offer.player:lower():find(needle, 1, true)) then
-            table.insert(filtered, offer)
+    offers = offers or {}
+    -- 1) Recherche texte (nom d'objet ou joueur)
+    if self.searchText and self.searchText ~= "" then
+        local needle, filtered = self.searchText:lower(), {}
+        for _, offer in ipairs(offers) do
+            local label = (offer.itemID and TS:GetItemName(offer.itemID, offer.itemName))
+                          or offer.itemName or offer.rawMsg or ""
+            if label:lower():find(needle, 1, true)
+               or (offer.player and offer.player:lower():find(needle, 1, true)) then
+                filtered[#filtered + 1] = offer
+            end
         end
+        offers = filtered
     end
-    return filtered
+    -- 2) Filtres HdV : catégorie / qualité / niveau (cf. UI_Categories)
+    if self._OfferPassesFilters then
+        local kept = {}
+        for _, offer in ipairs(offers) do
+            if self:_OfferPassesFilters(offer) then kept[#kept + 1] = offer end
+        end
+        offers = kept
+    end
+    -- 3) Tri par colonne si sélectionné (cf. UI_Filters)
+    if self._SortOffers then offers = self:_SortOffers(offers) end
+    return offers
 end
 
 function UI:_FillRow(row, offer)
     row.offer = offer
     local srcTag = (offer.source == "guild") and "|cFFFFAA00[G]|r " or ""
     if offer.offerType == "sell" then row.typeFS:SetText(srcTag .. "|cFF33DD33WTS|r")
+    elseif offer.offerType == "gift" then row.typeFS:SetText(srcTag .. "|cFFCC66FFWTG|r")
     else                              row.typeFS:SetText(srcTag .. "|cFF33AAFFWTB|r") end
     if offer.itemLink then
         row.itemFS:SetText(offer.itemLink)
@@ -346,11 +332,11 @@ function UI:_UpdateStatus(totalAll, totalSell, profCount)
         local guildState = (TS.db and TS.db.scanGuild)
             and "|cFF33DD33/g ON|r" or "|cFFFF4444/g OFF|r"
         self.statusText:SetText(string.format(
-            "%d offers  |  |cFFFFCC00%d WTB sellable|r  |  Channel: |cFF00CCFF%s|r  |  %s  |  %d profession(s)",
-            totalAll, totalSell, TS.db and TS.db.channel or "?", guildState, profCount))
+            "%d offers  |  |cFFFFCC00%d WTB sellable|r  |  Channels: |cFF00CCFF%s|r  |  %s  |  %d profession(s)",
+            totalAll, totalSell, TS:ChannelsLabel(), guildState, profCount))
     end
     if self.chanLabel and TS.db then
-        self.chanLabel:SetText("Watching: |cFF00CCFF#" .. TS.db.channel .. "|r")
+        self.chanLabel:SetText("Watching: |cFF00CCFF" .. TS:ChannelsLabel() .. "|r")
     end
 end
 

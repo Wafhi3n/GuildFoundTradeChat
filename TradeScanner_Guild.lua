@@ -60,7 +60,10 @@ function Guild:MarkSeen(player, professions, version)
     local r = TS.db.guildRoster[player] or {}
     r.lastSeen = time()
     if professions then r.professions = professions end
-    if version then r.version = version end
+    if version then
+        r.version = version
+        TS:NotifyIfNewerVersion(version)  -- alerte 1×/session si maj dispo
+    end
     TS.db.guildRoster[player] = r
 end
 
@@ -332,12 +335,19 @@ end
 -- ============================================================
 
 function Guild:Init()
-    -- Les skill lines sont prêtes après PLAYER_LOGIN ; petit délai de sécurité.
+    -- Scan des métiers à la connexion. Les skill lines ne sont pas toujours peuplées
+    -- juste après PLAYER_LOGIN (en particulier en confédération) → on retente quelques
+    -- fois tant que le scan revient vide, puis on annonce (guilde locale).
+    local function tryDetect(attempt)
+        self:DetectMyProfessions()
+        if #(self.myProfessions or {}) == 0 and attempt < 5 then
+            C_Timer.After(3, function() tryDetect(attempt + 1) end)
+        elseif TS.Net then
+            TS.Net:BroadcastProfessions(self.myProfessions)
+        end
+    end
     if C_Timer and C_Timer.After then
-        C_Timer.After(2, function()
-            self:DetectMyProfessions()
-            if TS.Net then TS.Net:BroadcastProfessions(self.myProfessions) end
-        end)
+        C_Timer.After(2, function() tryDetect(1) end)
     else
         self:DetectMyProfessions()
     end

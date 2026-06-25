@@ -63,24 +63,30 @@ function MM:Build()
     if self.btn then return end
 
     local btn = CreateFrame("Button", "TradeScannerMinimapBtn", Minimap)
-    btn:SetSize(32, 32)
+    btn:SetSize(31, 31)
     btn:SetFrameStrata("MEDIUM")
     btn:SetFrameLevel(8)
     btn:SetClampedToScreen(false)
 
+    -- Placement standard LibDBIcon. La texture MiniMap-TrackingBorder dessine
+    -- l'anneau dans le coin HAUT-GAUCHE de son cadre 53×53 : il faut donc l'ancrer
+    -- en TOPLEFT (et non centrée) et décaler le fond/l'icône de (7,-5)/(7,-6) pour
+    -- qu'ils tombent à l'intérieur de l'anneau. Centrer le cadre poussait l'anneau
+    -- vers le bas-droite par rapport à l'icône → c'était le bug « cercle décalé ».
     local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture("Interface\\Minimap\\UI-Minimap-ZoneButton-Background")
+    bg:SetSize(20, 20)
+    bg:SetPoint("TOPLEFT", 7, -5)
+    bg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
 
     local icon = btn:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(20, 20)
-    icon:SetPoint("CENTER", btn, "CENTER", 0, 0)
+    icon:SetSize(17, 17)
+    icon:SetPoint("TOPLEFT", 7, -6)
     icon:SetTexture("Interface\\Icons\\INV_Misc_Bag_08")
     self.icon = icon
 
     local border = btn:CreateTexture(nil, "OVERLAY")
-    border:SetSize(56, 56)
-    border:SetPoint("CENTER", btn, "CENTER", 0, 0)
+    border:SetSize(53, 53)
+    border:SetPoint("TOPLEFT", 0, 0)
     border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
     self.border = border
 

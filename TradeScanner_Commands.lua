@@ -69,28 +69,50 @@ function TS:_CmdExclude(arg)
 end
 
 function TS:_CmdChannel(arg)
-    if arg and arg ~= "" then
-        self.db.channel = arg:lower()
-        print("|cFF00CCFFGuild Economy|r Channel: |cFF00CCFF" .. self.db.channel .. "|r")
+    local sub, rest = (arg or ""):match("^(%S*)%s*(.*)$")
+    sub = (sub or ""):lower()
+    rest = (rest or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if sub == "add" and rest ~= "" then
+        if self:AddWatchedChannel(rest) then
+            print("|cFF00CCFFGuild Economy|r Watching channel: |cFF00CCFF" .. rest:lower() .. "|r")
+        else
+            print("|cFF00CCFFGuild Economy|r Already watched: " .. rest:lower())
+        end
+    elseif sub == "remove" and rest ~= "" then
+        if self:RemoveWatchedChannel(rest) then
+            print("|cFF00CCFFGuild Economy|r Stopped watching: |cFFFF4444" .. rest:lower() .. "|r")
+        else
+            print("|cFF00CCFFGuild Economy|r Not in watch list: " .. rest:lower())
+        end
+    elseif sub == "list" then
+        print("|cFF00CCFFGuild Economy|r Watched channels: |cFF00CCFF" .. self:ChannelsLabel() .. "|r")
+        print("|cFF00CCFFGuild Economy|r Default send channel: |cFF00CCFF" .. (self.db.channel or "?") .. "|r")
+    elseif sub ~= "" then
+        -- Rétro-compat : /ts channel <nom> définit le canal d'ENVOI par défaut.
+        self.db.channel = (sub .. (rest ~= "" and (" " .. rest) or "")):lower()
+        print("|cFF00CCFFGuild Economy|r Default send channel: |cFF00CCFF" .. self.db.channel .. "|r")
     else
-        print("|cFF00CCFFGuild Economy|r Current channel: |cFF00CCFF" .. self.db.channel .. "|r")
+        print("|cFF00CCFFGuild Economy|r Usage: /ts channel add|remove|list <name> (or <name> = set send channel)")
+        print("|cFF00CCFFGuild Economy|r Watched: |cFF00CCFF" .. self:ChannelsLabel() .. "|r")
     end
+    if self.UI and self.UI.Refresh then self.UI:Refresh() end
+    if self.Settings and self.Settings.Refresh then self.Settings:Refresh() end
 end
 
 function TS:_CmdAdd(arg)
     local side, kw = (arg or ""):match("^(%S+)%s+(.+)")
-    if side and kw and (side == "sell" or side == "buy") then
+    if side and kw and (side == "sell" or side == "buy" or side == "gift") then
         local kwUpper = kw:upper():gsub("%s+", "")
         table.insert(self.db.keywords[side], kwUpper)
         print(string.format("|cFF00CCFFGuild Economy|r Keyword [%s] added: |cFFFFFF00%s|r", side, kwUpper))
     else
-        print("|cFF00CCFFGuild Economy|r Usage: /ts add sell <WORD> or /ts add buy <WORD>")
+        print("|cFF00CCFFGuild Economy|r Usage: /ts add sell|buy|gift <WORD>")
     end
 end
 
 function TS:_CmdRemove(arg)
     local side, kw = (arg or ""):match("^(%S+)%s+(.+)")
-    if side and kw and (side == "sell" or side == "buy") then
+    if side and kw and (side == "sell" or side == "buy" or side == "gift") then
         local kwUpper = kw:upper():gsub("%s+", "")
         local list = self.db.keywords[side]
         for i = #list, 1, -1 do
@@ -208,7 +230,11 @@ function TS:_CmdHelp()
     print("  /ts scan                  - scan open profession window")
     print("  /ts sell <shift-click>    - add/remove a manual sellable item")
     print("  /ts exclude <shift-click> - exclude/include an item from scan")
-    print("  /ts channel <name>        - set channel (default: freshtrade)")
+    print("  /ts settings              - open the settings panel")
+    print("  /ts channel <name>        - set default send channel")
+    print("  /ts channel add <name>    - watch an extra channel")
+    print("  /ts channel remove <name> - stop watching a channel")
+    print("  /ts channel list          - list watched channels")
     print("  /ts guild                 - toggle /g scan (GreenWall)")
     print("  /ts wts                   - toggle bag Alt-right-click WTS shortcut")
     print("  /ts confed                - toggle cross-realm sync (GreenWall)")
@@ -234,6 +260,8 @@ function TS:HandleSlash(msg)
         if self.UI then self.UI:Toggle() end
     elseif cmd == "order" or cmd == "orders" then
         if self.OrderPanel then self.OrderPanel:Toggle() end
+    elseif cmd == "settings" or cmd == "config" or cmd == "options" then
+        if self.Settings then self.Settings:Toggle() end
     elseif cmd == "profs" or cmd == "professions" then
         self:_CmdProfs()
     elseif cmd == "clear" then
@@ -274,6 +302,7 @@ function TS:HandleSlash(msg)
     elseif cmd == "keywords" or cmd == "kw" then
         print("|cFF00CCFFGuild Economy|r Sell keywords: " .. table.concat(self.db.keywords.sell, ", "))
         print("|cFF00CCFFGuild Economy|r Buy keywords:  " .. table.concat(self.db.keywords.buy,  ", "))
+        print("|cFF00CCFFGuild Economy|r Gift keywords: " .. table.concat(self.db.keywords.gift or {}, ", "))
     elseif cmd == "help" then self:_CmdHelp()
     else
         if self.UI then self.UI:Toggle() end

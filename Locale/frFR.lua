@@ -54,3 +54,36 @@ L["Manual sellable (click to remove)"]                   = "Vendable manuel (cli
 L["(empty)"]                                             = "(vide)"
 L["Shift-click an item or enter an item ID."]            = "Shift-clic un objet dans le champ, ou tape un itemID."
 L["Sellable+: "]                                         = "Vendable + : "
+
+-- v1.5 — Réglages (TradeScanner_Settings)
+L["Settings"]                                            = "Réglages"
+L["Watched channels"]                                    = "Canaux surveillés"
+L["Add"]                                                 = "Ajouter"
+L["Send channel:"]                                       = "Canal d'envoi :"
+L["Craft alert sound"]                                   = "Son d'alerte craft"
+L["Scan guild chat (/g)"]                                = "Scanner le canal de guilde (/g)"
+L["Cross-realm sync (GreenWall)"]                        = "Sync inter-royaume (GreenWall)"
+L["Bag Alt-right-click to sell"]                         = "Alt+clic droit du sac pour vendre"
+L["Debug log (chat)"]                                    = "Journal de debug (chat)"
+L["Manual sellable"]                                     = "Vendable manuel"
+
+-- v1.5 — Composeur de vente multi-item (TradeScanner_SellComposer)
+L["Item"]                                                = "Objet"
+L["Sell all"]                                            = "Tout vendre"
+L["Clear"]                                               = "Vider"
+L["Alt+right-click bag items to add them here."]         = "Alt+clic droit sur un objet du sac pour l'ajouter ici."
+
+-- v1.5 — Tooltip sac
+L["Alt + right-click: sell on the trade channel"]        = "Alt + clic droit : vendre sur le canal de commerce"
+
+-- v1.5 — Alerte de version (TradeScanner.lua)
+L["A newer version (%s) is available — you have %s."]    = "Une nouvelle version (%s) est disponible — tu as %s."
+
+-- v1.5 — Filtres HdV (TradeScanner_UI_Categories)
+L["All"]                                                 = "Toutes"
+L["Any"]                                                 = "Toutes"
+L["Quality"]                                             = "Qualité"
+L["Level"]                                               = "Niveau"
+
+-- v1.5 — Onglet Orders : crafters en ligne du métier (TradeScanner_OrderPanel_Rows)
+L["— %s online (%d) —"]                                  = "— %s en ligne (%d) —"

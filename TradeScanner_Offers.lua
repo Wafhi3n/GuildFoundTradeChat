@@ -40,11 +40,15 @@ end
 
 local function DetectOfferType(msg, keywords)
     local upper = msg:upper()
+    -- sell/buy d'abord (un "WTS ... free" reste une vente), puis gift (WTG/don).
     for _, kw in ipairs(keywords.sell) do
         if upper:find(kw, 1, true) then return "sell" end
     end
     for _, kw in ipairs(keywords.buy) do
         if upper:find(kw, 1, true) then return "buy" end
+    end
+    for _, kw in ipairs(keywords.gift or {}) do
+        if upper:find(kw, 1, true) then return "gift" end
     end
     return nil
 end
@@ -166,7 +170,7 @@ function TS:ParseMessage(msg, player, channelName, source)
     source = source or "channel"
     if source == "channel" then
         local chanClean = StripChannelNumber(channelName)
-        if not chanClean:find(self.db.channel:lower(), 1, true) then
+        if not self:ChannelIsWatched(chanClean) then
             self:LogRaw(player, channelName, msg, "skip_chan")
             return
         end

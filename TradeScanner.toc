@@ -2,7 +2,7 @@
 ## Title: Guild Economy
 ## Notes: Guild trade channel scanner with profession integration and craft orders. /ts to open.
 ## Author:
-## Version: 1.4.0
+## Version: 1.5.0
 ## SavedVariables: TradeScannerDB, TradeScannerLog
 
 TradeScanner.lua
@@ -28,9 +28,14 @@ Data\Professions\Tailoring.lua
 TradeScanner_Minimap.lua
 TradeScanner_UI.lua
 TradeScanner_UI_Rows.lua
+TradeScanner_UI_Categories.lua
+TradeScanner_UI_Filters.lua
+TradeScanner_Settings.lua
+TradeScanner_Tooltip.lua
 TradeScanner_ProfPanel.lua
 TradeScanner_Network.lua
 TradeScanner_BagSell.lua
+TradeScanner_SellComposer.lua
 TradeScanner_Guild.lua
 TradeScanner_Trade.lua
 TradeScanner_OrderPanel.lua
