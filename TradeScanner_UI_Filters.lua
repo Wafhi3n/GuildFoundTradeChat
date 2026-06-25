@@ -33,7 +33,7 @@ function UI:_BuildSortableHeaders(pane)
         else
             local fs = pane:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             fs:SetPoint("TOPLEFT", col.x, -6); fs:SetWidth(col.w); fs:SetJustifyH("LEFT")
-            fs:SetText("|cFFAAAAAA" .. col.label .. "|r")
+            fs:SetText(col.label); UI.Skin.HeaderColor(fs, false)
         end
     end
     self:_UpdateHeaderLabels()
@@ -51,9 +51,11 @@ end
 
 function UI:_UpdateHeaderLabels()
     for key, b in pairs(self.headerBtns or {}) do
+        local active = (self.sortKey == key)
         local arrow = ""
-        if self.sortKey == key then arrow = self.sortAsc and ARROW_UP or ARROW_DOWN end
-        b.fs:SetText("|cFFAAAAAA" .. b.baseLabel .. arrow .. "|r")
+        if active then arrow = self.sortAsc and ARROW_UP or ARROW_DOWN end
+        b.fs:SetText(b.baseLabel .. arrow)
+        UI.Skin.HeaderColor(b.fs, active)
     end
 end
 

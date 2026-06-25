@@ -40,13 +40,9 @@ local function FormatAge(ts)
     end
 end
 
+-- Délègue au module skin (ligne 1px warm, cf. TradeScanner_UI_Skin.lua).
 local function MakeSeparator(parent, offsetY)
-    local sep = parent:CreateTexture(nil, "ARTWORK")
-    sep:SetHeight(1)
-    sep:SetColorTexture(0.3, 0.3, 0.45, 0.9)
-    sep:SetPoint("TOPLEFT",  4,  offsetY)
-    sep:SetPoint("TOPRIGHT", -4, offsetY)
-    return sep
+    return UI.Skin.MakeSeparator(parent, offsetY)
 end
 
 -- ============================================================
@@ -54,19 +50,24 @@ end
 -- ============================================================
 
 function UI:_BuildTitleBar(f)
-    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", 0, -10)
-    title:SetText("|cFF00CCFFGuild Economy|r")
+    -- Wordmark « Guild Economy » gravé en or (police bundle MORPHEUS, cf. skin).
+    local title = f:CreateFontString(nil, "OVERLAY")
+    title:SetFontObject(UI.Skin.WordmarkFont())
+    title:SetPoint("TOP", 0, -14)
+    title:SetText("Guild Economy")
+    -- Sous-ligne « Watching » conservée pour _UpdateStatus mais masquée : l'info des
+    -- canaux vit désormais dans la barre de statut (cf. mockup).
     local chanLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    chanLabel:SetPoint("TOP", 0, -28)
-    chanLabel:SetTextColor(0.55, 0.55, 0.55)
+    chanLabel:SetPoint("TOP", 0, -40)
+    chanLabel:SetTextColor(UI.Skin.unpack(UI.Skin.color.goldOre))
+    chanLabel:Hide()
     self.chanLabel = chanLabel
     local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", -2, -2)
+    closeBtn:SetPoint("TOPRIGHT", -8, -8)
     closeBtn:SetScript("OnClick", function() f:Hide() end)
     local gearBtn = CreateFrame("Button", nil, f)
     gearBtn:SetSize(20, 20)
-    gearBtn:SetPoint("TOPLEFT", 8, -8)
+    gearBtn:SetPoint("TOPLEFT", 14, -14)
     gearBtn:SetNormalTexture("Interface\\Icons\\INV_Misc_Gear_01")
     gearBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
     gearBtn:SetScript("OnClick", function()
@@ -78,11 +79,13 @@ function UI:_BuildTitleBar(f)
     end)
     gearBtn:SetScript("OnLeave", GameTooltip_Hide)
     local searchLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    searchLabel:SetPoint("TOPRIGHT", -180, -14)
-    searchLabel:SetText("|cFFAAAAAAFilter|r")
+    searchLabel:SetPoint("TOPRIGHT", -184, -18)
+    searchLabel:SetText("Filter")
+    searchLabel:SetTextColor(UI.Skin.unpack(UI.Skin.color.gold))
+    UI.Skin.ApplyShadow(searchLabel)
     local searchBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
     searchBox:SetSize(120, 18)
-    searchBox:SetPoint("TOPRIGHT", -36, -10)
+    searchBox:SetPoint("TOPRIGHT", -40, -14)
     searchBox:SetAutoFocus(false)
     searchBox:SetScript("OnTextChanged", function(box) UI.searchText = box:GetText(); UI:Refresh() end)
     searchBox:SetScript("OnEscapePressed", function(box) box:SetText(""); box:ClearFocus() end)
@@ -125,7 +128,8 @@ end
 
 function UI:_BuildScrollRows(pane)
     local scrollFrame = CreateFrame("ScrollFrame", "TradeScannerScroll", pane, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT",     4,  -26)
+    -- x=0 : aligne les lignes (enfants du scroll) sur les en-têtes ancrés au pane.
+    scrollFrame:SetPoint("TOPLEFT",     0,  -26)
     scrollFrame:SetPoint("BOTTOMRIGHT", -26, 62)
     local content = CreateFrame("Frame", nil, scrollFrame)
     content:SetWidth(FRAME_W - 32)
@@ -135,10 +139,13 @@ function UI:_BuildScrollRows(pane)
     self.content     = content
     self.rows = {}
     for i = 1, MAX_ROWS * 3 do self.rows[i] = self:BuildRow(content, i) end
-    MakeSeparator(pane, -(FRAME_H - 60 - 70))
+    -- Scène tavern en filigrane PERMANENT derrière le tableau (cf. skin).
+    self.tableScene = UI.Skin.BuildTableScene(pane, scrollFrame)
+    MakeSeparator(pane, -(FRAME_H - 66 - 70))
     local statusText = pane:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    statusText:SetPoint("BOTTOMLEFT", 8, 36)
-    statusText:SetTextColor(0.55, 0.55, 0.55)
+    statusText:SetPoint("BOTTOMLEFT", 8, 42)
+    statusText:SetTextColor(UI.Skin.unpack(UI.Skin.color.textMuted))
+    UI.Skin.ApplyShadow(statusText)
     self.statusText = statusText
 end
 
@@ -146,15 +153,16 @@ end
 -- a été retiré d'ici (v1.5) — il est désormais géré dans le panneau Réglages et via
 -- /ts sell. La place libérée à gauche accueille la barre de filtres (cf. UI_Filters).
 function UI:_BuildBottomButtons(pane)
-    local refreshBtn = CreateFrame("Button", nil, pane, "UIPanelButtonTemplate")
-    refreshBtn:SetSize(90, 22); refreshBtn:SetPoint("BOTTOMRIGHT", -28, 8)
-    refreshBtn:SetText("Refresh"); refreshBtn:SetScript("OnClick", function()
+    -- Boutons or maison (échappent au skin externe qui teinte les boutons en rouge).
+    local refreshBtn = UI.Skin.MakeGoldButton(pane, 90, 22, "Refresh")
+    refreshBtn:SetPoint("BOTTOMRIGHT", -28, 16)
+    refreshBtn:SetScript("OnClick", function()
         if TS.Net then TS.Net:BroadcastWho() end
         UI:Refresh()
     end)
-    local clearBtn = CreateFrame("Button", nil, pane, "UIPanelButtonTemplate")
-    clearBtn:SetSize(70, 22); clearBtn:SetPoint("BOTTOMRIGHT", -122, 8)
-    clearBtn:SetText("Clear"); clearBtn:SetScript("OnClick", function() TS.db.offers = {}; UI:Refresh() end)
+    local clearBtn = UI.Skin.MakeGoldButton(pane, 70, 22, "Clear")
+    clearBtn:SetPoint("BOTTOMRIGHT", -122, 16)
+    clearBtn:SetScript("OnClick", function() TS.db.offers = {}; UI:Refresh() end)
 end
 
 -- ============================================================
@@ -168,13 +176,7 @@ function UI:Build()
     f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", f.StartMoving); f:SetScript("OnDragStop", f.StopMovingOrSizing)
     f:SetClampedToScreen(true); f:SetFrameStrata("MEDIUM"); f:SetFrameLevel(10); f:Hide()
-    f:SetBackdrop({
-        bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 16, insets = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-    f:SetBackdropColor(0.05, 0.05, 0.09, 0.96)
-    f:SetBackdropBorderColor(0.35, 0.35, 0.5, 1)
+    UI.Skin.SkinFrameBackdrop(f)  -- fond brun chaud + cadre or ornementé (cf. skin)
     self:_BuildTitleBar(f)
     self:_BuildTabButtons(f)
     self:_BuildOffersPane(f)
@@ -192,30 +194,36 @@ end
 -- ============================================================
 
 function UI:BuildTabButton(parent, tabDef, index)
-    local tabW = TAB_W
-    local tabH = 22
+    local tabW, tabH = TAB_W, 22
     local btn  = CreateFrame("Button", nil, parent)
     btn:SetSize(tabW, tabH)
-    btn:SetPoint("TOPLEFT", 8 + (index - 1) * (tabW + 4), -48)
+    btn:SetPoint("TOPLEFT", 14 + (index - 1) * (tabW + 4), -48)
     local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints(); bg:SetColorTexture(0.12, 0.12, 0.18, 0.9)
+    bg:SetAllPoints()
     btn.bg = bg
+    -- Bevel carré « tablette de pierre » : liseré clair en haut, sombre en bas.
+    local hiEdge = btn:CreateTexture(nil, "BORDER")
+    hiEdge:SetHeight(1); hiEdge:SetPoint("TOPLEFT"); hiEdge:SetPoint("TOPRIGHT")
+    hiEdge:SetColorTexture(UI.Skin.unpack(UI.Skin.color.stoneHi))
+    local loEdge = btn:CreateTexture(nil, "BORDER")
+    loEdge:SetHeight(1); loEdge:SetPoint("BOTTOMLEFT"); loEdge:SetPoint("BOTTOMRIGHT")
+    loEdge:SetColorTexture(UI.Skin.unpack(UI.Skin.color.void))
     local txt = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    txt:SetAllPoints(); txt:SetText(tabDef.label); txt:SetTextColor(0.7, 0.7, 0.7)
+    txt:SetAllPoints(); txt:SetText(tabDef.label)
+    UI.Skin.ApplyShadow(txt)
     btn.txt = txt
     btn.tabID = tabDef.id
+    UI.Skin.TabColors(btn, "idle")
     -- Clic d'onglet = hardware event → on en profite pour s'annoncer cross-guilde (throttlé).
     btn:SetScript("OnClick", function(b)
         UI:SetTab(b.tabID)
         if TS.Net then TS.Net:BroadcastWho() end
     end)
     btn:SetScript("OnEnter", function(b)
-        if UI.activeTab ~= b.tabID then b.bg:SetColorTexture(0.2, 0.2, 0.3, 0.9) end
+        if UI.activeTab ~= b.tabID then UI.Skin.TabColors(b, "hover") end
     end)
     btn:SetScript("OnLeave", function(b)
-        if UI.activeTab ~= b.tabID then
-            b.bg:SetColorTexture(0.12, 0.12, 0.18, 0.9); b.txt:SetTextColor(0.7, 0.7, 0.7)
-        end
+        if UI.activeTab ~= b.tabID then UI.Skin.TabColors(b, "idle") end
     end)
     return btn
 end
@@ -223,11 +231,7 @@ end
 function UI:SetTab(tabID)
     self.activeTab = tabID
     for id, btn in pairs(self.tabBtns) do
-        if id == tabID then
-            btn.bg:SetColorTexture(0.15, 0.35, 0.65, 0.95); btn.txt:SetTextColor(1, 1, 1)
-        else
-            btn.bg:SetColorTexture(0.12, 0.12, 0.18, 0.9); btn.txt:SetTextColor(0.7, 0.7, 0.7)
-        end
+        UI.Skin.TabColors(btn, id == tabID and "active" or "idle")
     end
     local isOrders = (tabID == "orders")
     if self.offersPane then self.offersPane:SetShown(not isOrders) end
@@ -289,9 +293,11 @@ function UI:_FillRow(row, offer)
         -- Offre réseau (itemID sans lien) : résoudre le nom EN DIRECT. S'il n'est pas
         -- encore en cache client, déclencher le chargement et afficher un placeholder ;
         -- GET_ITEM_INFO_RECEIVED relancera un refresh quand l'info arrive (cf. 1.5.2).
-        local name = GetItemInfo(offer.itemID)
+        local name, _, quality = GetItemInfo(offer.itemID)
         if name then
-            row.itemFS:SetText(name)
+            -- Nom coloré par rareté WoW (convention HdV).
+            local c = quality and _G.ITEM_QUALITY_COLORS and _G.ITEM_QUALITY_COLORS[quality]
+            row.itemFS:SetText(c and (c.hex .. name .. "|r") or name)
         else
             if C_Item and C_Item.RequestLoadItemDataByID then
                 C_Item.RequestLoadItemDataByID(offer.itemID)
@@ -345,12 +351,32 @@ function UI:_UpdateStatus(totalAll, totalSell, profCount)
         local guildState = (TS.db and TS.db.scanGuild)
             and "|cFF33DD33/g ON|r" or "|cFFFF4444/g OFF|r"
         self.statusText:SetText(string.format(
-            "%d offers  |  |cFFFFCC00%d WTB sellable|r  |  Channels: |cFF00CCFF%s|r  |  %s  |  %d profession(s)",
+            "|cFFE8B84B%d|r offers  |  |cFFFFDD00%d WTB sellable|r  |  Channels: |cFF00CCFF%s|r  |  %s  |  |cFFE8B84B%d|r profession(s)",
             totalAll, totalSell, TS:ChannelsLabel(), guildState, profCount))
     end
     if self.chanLabel and TS.db then
         self.chanLabel:SetText("Watching: |cFF00CCFF" .. TS:ChannelsLabel() .. "|r")
     end
+end
+
+-- La scène tavern reste un filigrane permanent ; on ne fait qu'ajuster le voile
+-- (plus clair quand vide pour la faire ressortir) et afficher le label si vide.
+function UI:_UpdateEmptyState(isEmpty)
+    local sc = self.tableScene
+    if not sc then return end
+    sc.veil:SetAlpha(isEmpty and 0.18 or 0.62)
+    if isEmpty then
+        local filtered = (self.searchText and self.searchText ~= "")
+            or self.filterClassID or self.filterQuality
+            or self.filterLevelMin or self.filterLevelMax
+        if filtered then
+            sc.label:SetText("No offers match your filters.")
+        else
+            sc.label:SetText("Watching " .. TS:ChannelsLabel()
+                .. "  —  WTB and WTS in balance.")
+        end
+    end
+    sc.label:SetShown(isEmpty)
 end
 
 -- ============================================================
@@ -372,6 +398,7 @@ function UI:Refresh()
     end
     local count = math.min(#offers, #self.rows)
     for i = 1, count do self:_FillRow(self.rows[i], offers[i]) end
+    self:_UpdateEmptyState(#offers == 0)
     local totalAll  = #TS:GetOffers(nil, false)
     local totalSell = #TS:GetSellableOffers()
     local profCount = 0

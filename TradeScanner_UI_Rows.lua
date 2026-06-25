@@ -88,10 +88,10 @@ function UI:BuildRow(parent, index)
     row:SetPoint("TOPLEFT", 0, -(index - 1) * ROW_H)
     local bg = row:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
-    if index % 2 == 0 then bg:SetColorTexture(0.09, 0.09, 0.13, 0.7)
-    else                    bg:SetColorTexture(0.05, 0.05, 0.09, 0.5) end
+    local zebra = (index % 2 == 0) and UI.Skin.color.rowEven or UI.Skin.color.rowOdd
+    bg:SetColorTexture(UI.Skin.unpack(zebra))
     local hi = row:CreateTexture(nil, "HIGHLIGHT")
-    hi:SetAllPoints(); hi:SetColorTexture(0.25, 0.45, 0.85, 0.25)
+    hi:SetAllPoints(); hi:SetColorTexture(UI.Skin.unpack(UI.Skin.color.rowHover))
     local craftBar = row:CreateTexture(nil, "ARTWORK")
     craftBar:SetWidth(3); craftBar:SetPoint("TOPLEFT"); craftBar:SetPoint("BOTTOMLEFT")
     craftBar:SetColorTexture(1, 0.78, 0, 1); craftBar:Hide()
@@ -113,6 +113,10 @@ function UI:BuildRow(parent, index)
     row.craftFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     row.craftFS:SetPoint("LEFT", COLUMNS[6].x, 0); row.craftFS:SetWidth(COLUMNS[6].w)
     row.craftFS:SetJustifyH("LEFT"); row.craftFS:SetTextColor(1, 0.78, 0)
+    -- Ombre portée 1px noire sur chaque cellule (lisibilité sur fond texturé).
+    for _, fs in ipairs({ row.typeFS, row.itemFS, row.priceFS, row.playerFS, row.ageFS, row.craftFS }) do
+        UI.Skin.ApplyShadow(fs)
+    end
     AddRowButtons(row)
     row:SetScript("OnEnter", UIRowTooltip)
     row:SetScript("OnLeave", function(r)

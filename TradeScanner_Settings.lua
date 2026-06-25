@@ -77,9 +77,9 @@ function SET:_BuildChannels(f)
         self:Refresh(); if TS.UI then TS.UI:Refresh() end
     end
     addBox:SetScript("OnEnterPressed", DoAdd)
-    local addBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    addBtn:SetSize(50, 22); addBtn:SetPoint("LEFT", addBox, "RIGHT", 4, 0)
-    addBtn:SetText(L["Add"]); addBtn:SetScript("OnClick", DoAdd)
+    local addBtn = TS.UI.Skin.MakeGoldButton(f, 50, 22, L["Add"])
+    addBtn:SetPoint("LEFT", addBox, "RIGHT", 4, 0)
+    addBtn:SetScript("OnClick", DoAdd)
 end
 
 function SET:_BuildSendChannel(f)
@@ -139,9 +139,9 @@ function SET:_BuildSellable(f)
         end
     end
     addBox:SetScript("OnEnterPressed", DoAdd)
-    local addBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    addBtn:SetSize(50, 22); addBtn:SetPoint("LEFT", addBox, "RIGHT", 4, 0)
-    addBtn:SetText(L["Add"]); addBtn:SetScript("OnClick", DoAdd)
+    local addBtn = TS.UI.Skin.MakeGoldButton(f, 50, 22, L["Add"])
+    addBtn:SetPoint("LEFT", addBox, "RIGHT", 4, 0)
+    addBtn:SetScript("OnClick", DoAdd)
 
     local scroll = CreateFrame("ScrollFrame", "TradeScannerSettingsSellScroll", f, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 272, -88)

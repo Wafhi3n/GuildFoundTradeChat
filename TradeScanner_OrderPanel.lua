@@ -55,10 +55,8 @@ function OP:_BuildBottomBar(f)
     selLabel:SetPoint("BOTTOMLEFT", 16, 18)
     selLabel:SetText("|cFF888888" .. L["Select an item..."] .. "|r")
     self.selLabel = selLabel
-    local orderBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    orderBtn:SetSize(70, 22)
+    local orderBtn = TS.UI.Skin.MakeGoldButton(f, 70, 22, "Order")
     orderBtn:SetPoint("BOTTOMRIGHT", -16, 14)
-    orderBtn:SetText("Order")
     orderBtn:SetScript("OnClick", function() OP:SubmitOrder() end)
     local priceBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
     priceBox:SetSize(70, 18)
@@ -97,20 +95,17 @@ function OP:Build()
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", f.StartMoving)
     f:SetScript("OnDragStop", f.StopMovingOrSizing)
-    f:SetBackdrop({
-        bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true, tileSize = 32, edgeSize = 24,
-        insets = { left = 6, right = 6, top = 6, bottom = 6 },
-    })
+    TS.UI.Skin.SkinFrameBackdrop(f)  -- fond brun + cadre or ornementé (cohérence thème)
     f:Hide()
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -12)
-    title:SetText("|cFF00CCFFGuild Craft Orders|r")
+    title:SetText("Guild Craft Orders")
+    title:SetTextColor(TS.UI.Skin.unpack(TS.UI.Skin.color.goldHi))
+    TS.UI.Skin.ApplyShadow(title)
 
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", -6, -6)
+    close:SetPoint("TOPRIGHT", -8, -8)
 
     self.tabs = {}
     self.tabContainer = CreateFrame("Frame", nil, f)
@@ -203,8 +198,8 @@ function OP:RefreshTabs()
     for i, prof in ipairs(profs) do
         local t = self.tabs[i]
         if not t then
-            t = CreateFrame("Button", nil, self.tabContainer, "UIPanelButtonTemplate")
-            t:SetHeight(20)
+            -- Bouton or maison (échappe au skin externe rouge), cf. TradeScanner_UI_Skin.
+            t = TS.UI.Skin.MakeGoldButton(self.tabContainer, 60, 20)
             self.tabs[i] = t
         end
         t:SetText(prof)
@@ -216,8 +211,7 @@ function OP:RefreshTabs()
         t:ClearAllPoints()
         t:SetPoint("TOPLEFT", self.tabContainer, "TOPLEFT", x, -rowIdx * 22)
         x = x + t:GetWidth() + 4
-        local isSel = (prof == self.currentProf)
-        t:SetNormalFontObject(isSel and "GameFontHighlight" or "GameFontNormalSmall")
+        t:SetSelected(prof == self.currentProf)
         t:SetScript("OnClick", function() OP:SelectProfession(prof) end)
         t:Show()
     end
@@ -381,10 +375,8 @@ function OP:_BuildEmbedBottomBar(parent, E)
     E.selLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     E.selLabel:SetPoint("BOTTOMLEFT", 8, 18)
     E.selLabel:SetText("|cFF888888" .. L["Select an item..."] .. "|r")
-    local orderBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    orderBtn:SetSize(70, 22)
+    local orderBtn = TS.UI.Skin.MakeGoldButton(parent, 70, 22, "Order")
     orderBtn:SetPoint("BOTTOMRIGHT", -8, 14)
-    orderBtn:SetText("Order")
     orderBtn:SetScript("OnClick", function() OP:SubmitOrderFromEmbed() end)
     E.priceBox = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
     E.priceBox:SetSize(70, 18)

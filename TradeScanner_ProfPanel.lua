@@ -30,10 +30,8 @@ end
 -- ------------------------------------------------------------------
 
 function PP:_BuildScanBtn(f)
-    local scanBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    scanBtn:SetSize(70, 20)
+    local scanBtn = TS.UI.Skin.MakeGoldButton(f, 70, 20, "Scan")
     scanBtn:SetPoint("TOPLEFT", 8, -28)
-    scanBtn:SetText("Scan")
     scanBtn:SetScript("OnClick", function()
         local count, prof = TS:ScanOpenProfession()
         if prof then
@@ -51,10 +49,8 @@ function PP:_BuildScanBtn(f)
 end
 
 function PP:_BuildFilterBtn(f, scanBtn)
-    local filterBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    filterBtn:SetSize(110, 20)
+    local filterBtn = TS.UI.Skin.MakeGoldButton(f, 110, 20, "Filter selected")
     filterBtn:SetPoint("LEFT", scanBtn, "RIGHT", 6, 0)
-    filterBtn:SetText("Filter selected")
     filterBtn:SetScript("OnClick", function()
         local itemID, link = TS:GetSelectedRecipe()
         if not itemID then
@@ -205,8 +201,7 @@ function PP:BuildRow(parent, index)
     row.cntFS = cntFS
 
     -- Bouton Accept/Cancel (visible sur les lignes de commandes craft)
-    local actionBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-    actionBtn:SetSize(54, 14)
+    local actionBtn = TS.UI.Skin.MakeGoldButton(row, 54, 14)
     actionBtn:SetPoint("RIGHT", -2, 0)
     actionBtn:Hide()
     row.actionBtn = actionBtn

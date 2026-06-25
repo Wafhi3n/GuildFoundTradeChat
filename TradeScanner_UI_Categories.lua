@@ -129,9 +129,11 @@ end
 
 function UI:_BuildQualityFilter(sb)
     self._qIdx = 1
-    local btn = CreateFrame("Button", nil, sb, "UIPanelButtonTemplate")
-    btn:SetSize(SIDEBAR_INNER, 20); btn:SetPoint("TOPLEFT", 0, 0)
-    btn:SetText(QualityText(nil)); btn:GetFontString():SetJustifyH("LEFT")
+    -- Bouton or maison (échappe au skin externe rouge), libellé aligné à gauche.
+    local btn = UI.Skin.MakeGoldButton(sb, SIDEBAR_INNER, 20, QualityText(nil))
+    btn:SetPoint("TOPLEFT", 0, 0)
+    local bfs = btn:GetFontString()
+    bfs:ClearAllPoints(); bfs:SetPoint("LEFT", 8, 0); bfs:SetJustifyH("LEFT")
     btn:SetScript("OnClick", function()
         self._qIdx = (self._qIdx % #QUALITIES) + 1
         self.filterQuality = QUALITIES[self._qIdx]
@@ -143,6 +145,7 @@ end
 function UI:_BuildLevelFilter(sb)
     local lbl = sb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     lbl:SetPoint("TOPLEFT", 0, -28); lbl:SetText(L["Level"])
+    lbl:SetTextColor(UI.Skin.unpack(UI.Skin.color.gold)); UI.Skin.ApplyShadow(lbl)
     local function box(xoff)
         local b = CreateFrame("EditBox", nil, sb, "InputBoxTemplate")
         b:SetSize(28, 18); b:SetPoint("TOPLEFT", xoff, -26)
@@ -174,6 +177,7 @@ function UI:_BuildTreeRow()
     hi:SetColorTexture(0.25, 0.45, 0.85, 0.25)
     local fs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     fs:SetPoint("RIGHT", 0, 0); fs:SetJustifyH("LEFT"); fs:SetWordWrap(false)
+    UI.Skin.ApplyShadow(fs)
     row.fs = fs
     row:SetScript("OnClick", function(r) if r.node then UI:_OnNodeClick(r.node) end end)
     return row
@@ -202,9 +206,11 @@ function UI:_RenderTree()
         row.fs:SetPoint("LEFT", 2 + e.depth * INDENT, 0)
         row.fs:SetPoint("RIGHT", 0, 0)
         row.fs:SetText(prefix .. node.label)
-        row.fs:SetTextColor(node == self.selectedNode and 1 or 0.8,
-                            node == self.selectedNode and 1 or 0.8,
-                            node == self.selectedNode and 1 or 0.8)
+        if node == self.selectedNode then
+            row.fs:SetTextColor(1, 1, 1)
+        else
+            row.fs:SetTextColor(UI.Skin.unpack(UI.Skin.color.text))
+        end
         row.sel:SetShown(node == self.selectedNode)
         row:Show()
     end
@@ -224,15 +230,19 @@ end
 function UI:_BuildSidebar(f)
     if self.sidebar then return end
     local sb = CreateFrame("Frame", nil, f)
-    sb:SetPoint("TOPLEFT",    8, -72)
-    sb:SetPoint("BOTTOMLEFT", 8,   8)
+    sb:SetPoint("TOPLEFT",    14, -72)
+    sb:SetPoint("BOTTOMLEFT", 14,  14)
     sb:SetWidth(SIDEBAR_INNER)
     self.sidebar = sb
     self:_BuildCategoryTree()
     self:_BuildQualityFilter(sb)
     self:_BuildLevelFilter(sb)
+    -- Puits encastré warm derrière l'arbre de catégories (cf. skin).
+    local well = CreateFrame("Frame", nil, sb, "BackdropTemplate")
+    well:SetPoint("TOPLEFT", 0, -54); well:SetPoint("BOTTOMRIGHT", 0, 0)
+    UI.Skin.SkinWell(well)
     local scroll = CreateFrame("ScrollFrame", "TradeScannerCatScroll", sb, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", 0, -54); scroll:SetPoint("BOTTOMRIGHT", -20, 0)
+    scroll:SetPoint("TOPLEFT", 4, -58); scroll:SetPoint("BOTTOMRIGHT", -22, 4)
     local content = CreateFrame("Frame", nil, scroll)
     content:SetSize(SIDEBAR_INNER - 22, 10)
     scroll:SetScrollChild(content)

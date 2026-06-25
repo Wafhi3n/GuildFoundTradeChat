@@ -48,8 +48,9 @@ function OP:BuildOrdRow(parent, index)
     local fs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     fs:SetPoint("LEFT", 2, 0); fs:SetWidth(190); fs:SetJustifyH("LEFT"); fs:SetWordWrap(false)
     row.fs = fs
-    local btn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-    btn:SetSize(56, 14); btn:SetPoint("RIGHT", 0, 0)
+    -- Bouton or maison (échappe au skin externe rouge), cf. TradeScanner_UI_Skin.
+    local btn = TS.UI.Skin.MakeGoldButton(row, 56, 14)
+    btn:SetPoint("RIGHT", 0, 0)
     row.btn = btn
     row:Hide()
     return row
