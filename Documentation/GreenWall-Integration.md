@@ -273,19 +273,28 @@ Contexte cible : **~12 co-guildes de ~1000 membres**. Le point clé tient en une
    seul** rebuild après 0,2 s et ne touche la fenêtre d'offres **que si visible**. Tous les
    chemins de réception réseau (`AddOffer`, `MarkDone`, `AddOrder`, `UpdateRoster`,
    `Cancel`/`Accept`/`FulfillOrder`) passent désormais par lui : un burst de N messages = 1 rebuild.
+4. **TTL sur les commandes.** `TS:PurgeOldOrders()` (core, appelé au `Init`) retire les commandes
+   de plus de `ORDER_EXPIRY`=7 j. Sans ça `db.craftOrders` ne se vidait jamais (≠ offres,
+   `OFFER_EXPIRY`=30 min) et la resync restait au plafond en permanence. La livraison `CF` en
+   retire déjà ; ceci rattrape les commandes abandonnées (auteur parti).
+5. **File d'envoi throttlée.** `NET:Send` empile désormais dans une file FIFO drainée à
+   `SEND_INTERVAL`=0,15 s (~6-7 msg/s, sous le plafond caché de Blizzard qui **droppe
+   silencieusement** au-delà). 1er message immédiat (latence ~0 pour un envoi isolé), bursts
+   bornés. Plus léger qu'embarquer ChatThrottleLib, et borne le débit *global* toutes sources
+   confondues. *(Si un jour le besoin grossit — fragmentation, priorités — passer à CTL.)*
+6. **Jitter + throttle des réponses au `HI`.** `NET:RespondToHello` n'honore qu'**un** `HI` par
+   fenêtre (`HELLO_RESPOND_THROTTLE`=10 s → pas de tickers de resync concurrents lors de logins
+   groupés) et démarre la resync après un délai aléatoire (`HELLO_JITTER`=3 s → les N répondeurs
+   d'un même `HI` ne s'alignent pas en burst). Le RNG est semé par nom de perso (`NET:Init`) pour
+   que le jitter diffère réellement d'un client à l'autre.
 
 ### Leviers restants (non appliqués — à discuter)
 
-- **TTL sur les commandes.** `db.craftOrders` n'expire pas (contrairement aux offres,
-  `OFFER_EXPIRY`=30 min). La livraison `CF` en retire, mais une commande jamais livrée reste
-  indéfiniment et regonfle la resync. → purger au-delà de X jours au chargement.
-- **ChatThrottleLib.** Les envois staggered utilisent `C_ChatInfo.SendAddonMessage` brut à
-  `OFFER_TICK`=0,1 s (10 msg/s). À forte charge, le throttle interne de Blizzard peut **dropper
-  silencieusement** des messages (resync incomplète) — coopérer via CTL serait plus sûr.
-- **Jitter des réponses.** Tous les répondeurs à un `HI` démarrent leur ticker au même instant
-  avec la même cadence → réponses alignées en burst. Un délai initial aléatoire (ex.
-  `math.random()*2` s) étalerait la charge ; idem, déduper des `HI` rapprochés éviterait des
-  tickers de resync concurrents.
+- **Purge périodique** des commandes (actuellement au `Init` seulement) : pour une session très
+  longue, un `C_Timer.NewTicker` horaire éviterait que des commandes expirent sans être retirées
+  de l'UI avant le prochain `/reload`. Marginal.
+- **Garde de taille `CF`/`CO`** avant `SendConfederation` (cf. §7) reste la piste la plus utile
+  côté robustesse, indépendante de la charge.
 
 ---
 

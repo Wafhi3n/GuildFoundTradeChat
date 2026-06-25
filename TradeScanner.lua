@@ -92,6 +92,8 @@ function TS:Init()
 
     ApplyKeywordMigrations(db)
 
+    self:PurgeOldOrders()  -- vide les commandes de craft dormantes (cf. doc §8)
+
     if not db.errorLog then db.errorLog = {} end
 
     if not TradeScannerLog then TradeScannerLog = { entries = {} } end
