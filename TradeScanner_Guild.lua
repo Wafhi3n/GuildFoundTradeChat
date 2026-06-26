@@ -47,6 +47,17 @@ function Guild:IHaveProfession(profCanonical)
     return false
 end
 
+-- True si le joueur est un membre CONNU de la confédération : soi-même, ou présent dans
+-- le roster Guild Economy (alimenté par PR/HI via /g local + GreenWall). Heuristique
+-- assumée : on ne "connaît" que les membres qui font tourner l'addon — c'est le seul
+-- signal fiable de confédération (WoW n'expose pas la guilde d'un joueur arbitraire d'un
+-- canal). Utilisé par le filtre confed des canaux surveillés (#5).
+function Guild:IsConfederate(player)
+    if not player or player == "" then return false end
+    if player == (UnitName("player") or "") then return true end
+    return (TS.db and TS.db.guildRoster and TS.db.guildRoster[player]) ~= nil
+end
+
 -- ============================================================
 -- REGISTRE DE GUILDE
 -- ============================================================

@@ -84,11 +84,13 @@ function TS:Init()
     if not db.doneOffers     then db.doneOffers     = {} end
     if not db.guildRoster    then db.guildRoster    = {} end
     if not db.craftOrders    then db.craftOrders    = {} end
+    if not db.confedChannels then db.confedChannels = {} end  -- canaux "confédération seule" (#5)
     if db.alertSound == nil  then db.alertSound     = true end
     if db.scanGuild  == nil  then db.scanGuild      = true end
     if db.debugLog   == nil  then db.debugLog       = false end
     if db.bagSellEnabled == nil then db.bagSellEnabled = true end
     if db.useGreenWall   == nil then db.useGreenWall   = true end
+    if db.replaceProfWindow == nil then db.replaceProfWindow = true end  -- fenêtre métier mono-bloc
 
     self.db           = db
     self.craftedItems = db.craftedItems
@@ -157,6 +159,31 @@ function TS:ChannelIsWatched(chanClean)
         if c ~= "" and chanClean:find(c:lower(), 1, true) then return true end
     end
     return false
+end
+
+-- True si ce canal est marqué "confédération seule" : on n'y parse que les offres des
+-- membres connus de la confédération (cf. TS.Guild:IsConfederate). Pour le canal Trade
+-- public bruyant (#5). Correspondance partielle comme ChannelIsWatched.
+function TS:ChannelConfedOnly(chanClean)
+    if not chanClean or not self.db.confedChannels then return false end
+    chanClean = chanClean:lower()
+    for c in pairs(self.db.confedChannels) do
+        if c ~= "" and chanClean:find(c:lower(), 1, true) then return true end
+    end
+    return false
+end
+
+-- Bascule le filtre "confédération seule" d'un canal. Retourne le nouvel état (bool).
+function TS:ToggleConfedChannel(name)
+    name = (name or ""):gsub("^%s+", ""):gsub("%s+$", ""):lower()
+    if name == "" then return end
+    self.db.confedChannels = self.db.confedChannels or {}
+    if self.db.confedChannels[name] then
+        self.db.confedChannels[name] = nil
+    else
+        self.db.confedChannels[name] = true
+    end
+    return self.db.confedChannels[name] == true
 end
 
 -- Ajoute un canal à la liste surveillée (normalisé en minuscules, sans doublon).
@@ -343,16 +370,20 @@ eventFrame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 -- Debounced profession scan: avoids stacking C_Timer.After on UPDATE bursts.
 local scanPending = false
 local function HandleProfessionShow()
+    -- Affichage immédiat de la fenêtre mono-bloc : neutralise la frame native sans flash
+    -- et relit les recettes (l'API est dispo dès SHOW). Refresh interne coalescé.
+    if TS.ProfWindow then
+        local okw, errw = pcall(function() TS.ProfWindow:OnProfessionShow() end)
+        if not okw then print("|cFFFF4444TS profwin error:|r " .. tostring(errw)) end
+    end
+    -- Scan debouncé du métier (indexation craftedItems) + refresh une fois indexé.
     if scanPending then return end
     scanPending = true
     C_Timer.After(0.3, function()
         scanPending = false
         local ok, err = pcall(function() TS:ScanOpenProfession() end)
         if not ok then print("|cFFFF4444TS scan error:|r " .. tostring(err)) end
-        if TS.ProfPanel then
-            local ok2, err2 = pcall(function() TS.ProfPanel:OnTradeSkillShow() end)
-            if not ok2 then print("|cFFFF4444TS panel error:|r " .. tostring(err2)) end
-        end
+        if TS.ProfWindow then pcall(function() TS.ProfWindow:Refresh() end) end
     end)
 end
 
@@ -405,7 +436,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         HandleProfessionShow()
 
     elseif event == "TRADE_SKILL_CLOSE" or event == "CRAFT_CLOSE" then
-        if TS.ProfPanel then TS.ProfPanel:OnTradeSkillClose() end
+        if TS.ProfWindow then TS.ProfWindow:OnProfessionClose() end
 
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         -- Un objet d'offre réseau vient d'être résolu côté client → refresh pour

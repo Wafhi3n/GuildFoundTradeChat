@@ -84,8 +84,18 @@ function TS:_CmdChannel(arg)
         else
             print("|cFF00CCFFGuild Economy|r Not in watch list: " .. rest:lower())
         end
+    elseif sub == "confed" and rest ~= "" then
+        local on = self:ToggleConfedChannel(rest)
+        local state = on and "|cFF33DD33ON|r" or "|cFFFF4444OFF|r"
+        print("|cFF00CCFFGuild Economy|r Confederation-only filter for |cFF00CCFF"
+              .. rest:lower() .. "|r: " .. state)
     elseif sub == "list" then
         print("|cFF00CCFFGuild Economy|r Watched channels: |cFF00CCFF" .. self:ChannelsLabel() .. "|r")
+        local confed = {}
+        for c in pairs(self.db.confedChannels or {}) do confed[#confed + 1] = c end
+        if #confed > 0 then
+            print("|cFF00CCFFGuild Economy|r Confederation-only: |cFFFFCC00" .. table.concat(confed, ", ") .. "|r")
+        end
         print("|cFF00CCFFGuild Economy|r Default send channel: |cFF00CCFF" .. (self.db.channel or "?") .. "|r")
     elseif sub ~= "" then
         -- Rétro-compat : /ts channel <nom> définit le canal d'ENVOI par défaut.
@@ -234,6 +244,7 @@ function TS:_CmdHelp()
     print("  /ts channel <name>        - set default send channel")
     print("  /ts channel add <name>    - watch an extra channel")
     print("  /ts channel remove <name> - stop watching a channel")
+    print("  /ts channel confed <name> - toggle confederation-only filter on a channel")
     print("  /ts channel list          - list watched channels")
     print("  /ts guild                 - toggle /g scan (GreenWall)")
     print("  /ts wts                   - toggle bag Alt-right-click WTS shortcut")

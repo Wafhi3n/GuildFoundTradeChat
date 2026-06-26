@@ -44,17 +44,28 @@ end
 -- POST CHAT (multi-lignes) + connexion au canal
 -- ============================================================
 
--- Poste une liste de lignes WTS dans le canal d'ENVOI par défaut (db.channel).
+-- Poste une liste de lignes WTS vers la destination demandée (défaut db.channel).
+-- dest = nom de canal surveillé, ou "GUILD" (/g, relayé en confédération par GreenWall).
 -- Premier message immédiat (pile du clic « Vendre »), les suivants étalés pour ne
 -- pas déclencher l'anti-spam chat du client.
-function BS:PostToChat(lines)
+function BS:PostToChat(lines, dest)
     if type(lines) == "string" then lines = { lines } end
     if not lines or #lines == 0 then return end
-    local chan = TS.db and TS.db.channel
+    dest = dest or (TS.db and TS.db.channel)
+
+    if dest == "GUILD" then
+        for i, line in ipairs(lines) do
+            if i == 1 then SendChatMessage(line, "GUILD")
+            else C_Timer.After((i - 1) * 0.6, function() SendChatMessage(line, "GUILD") end) end
+        end
+        return
+    end
+
+    local chan = dest
     if not chan or chan == "" then return end
     local id = GetChannelName(chan)
     if not (id and id > 0) then
-        self:PromptJoinChannel(lines)
+        self:PromptJoinChannel(lines, chan)
         return
     end
     for i, line in ipairs(lines) do
@@ -69,7 +80,8 @@ function BS:PostToChat(lines)
     end
 end
 
-function BS:PromptJoinChannel(lines)
+function BS:PromptJoinChannel(lines, chan)
+    chan = chan or TS.db.channel
     StaticPopupDialogs["TRADESCANNER_JOIN_CHANNEL"] = {
         text         = L["Not connected to the trade channel. Channel to join:"],
         button1      = L["Join"],
@@ -79,7 +91,7 @@ function BS:PromptJoinChannel(lines)
         whileDead    = true,
         hideOnEscape = true,
         OnShow = function(dlg)
-            dlg.editBox:SetText(TS.db.channel or "")
+            dlg.editBox:SetText(chan or "")
             dlg.editBox:HighlightText()
         end,
         OnAccept = function(dlg)

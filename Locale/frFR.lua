@@ -87,3 +87,22 @@ L["Level"]                                               = "Niveau"
 
 -- v1.5 — Onglet Orders : crafters en ligne du métier (TradeScanner_OrderPanel_Rows)
 L["— %s online (%d) —"]                                  = "— %s en ligne (%d) —"
+
+-- v1.6 — Bouton/panier de vente + sélecteur de canal (UI / SellComposer)
+L["Open the sell basket"]                                = "Ouvrir le panier de vente"
+L["Post to:"]                                            = "Poster dans :"
+L["Guild"]                                               = "Guilde"
+
+-- v1.6 — Filtre confédération + fenêtre métier mono-bloc (Settings / ProfWindow)
+L["Replace profession window"]                           = "Remplacer la fenêtre de métier"
+L["Reagents:"]                                           = "Composants :"
+L["Makes %s"]                                            = "Produit %s"
+L["Not enough reagents."]                                = "Composants insuffisants."
+L["Only show needed items"]                              = "N'afficher que les objets demandés"
+L["Craft orders"]                                        = "Commandes de craft"
+L["Disenchant"]                                          = "Désenchantement"
+L["Sellable"]                                            = "Vendable"
+L["Enchants"]                                            = "Enchantements"
+L["Enchantment (service)"]                               = "Enchantement (service)"
+L["Player who want this:"]                               = "Qui demande ça :"
+L["Validate"]                                            = "Valider"

@@ -115,7 +115,16 @@ function SET:_BuildToggles(f)
         function() return db.useGreenWall end, function(v) db.useGreenWall = v end)
     MakeCheck(f, L["Bag Alt-right-click to sell"], 16, y0 - 78,
         function() return db.bagSellEnabled end, function(v) db.bagSellEnabled = v end)
-    MakeCheck(f, L["Debug log (chat)"], 16, y0 - 104,
+    MakeCheck(f, L["Replace profession window"], 16, y0 - 104,
+        function() return db.replaceProfWindow end,
+        function(v)
+            db.replaceProfWindow = v
+            -- Désactivé en cours de session : restaurer l'UI Blizzard immédiatement.
+            if not v and TS.ProfWindow then
+                TS.ProfWindow:Hide(); TS.ProfWindow:RestoreNative()
+            end
+        end)
+    MakeCheck(f, L["Debug log (chat)"], 16, y0 - 130,
         function() return db.debugLog end, function(v) db.debugLog = v end)
 end
 

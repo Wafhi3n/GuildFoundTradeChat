@@ -91,14 +91,46 @@ end
 
 function SC:_BuildButtons(f)
     local hint = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    hint:SetPoint("BOTTOMLEFT", 16, 16); hint:SetTextColor(0.55, 0.55, 0.55)
+    hint:SetPoint("BOTTOMLEFT", 16, 44); hint:SetTextColor(0.55, 0.55, 0.55)
     hint:SetText(L["Alt+right-click bag items to add them here."])
+    -- Sélecteur de destination d'envoi (canaux surveillés + /g). Cliquer cycle.
+    local postLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    postLbl:SetPoint("BOTTOMLEFT", 16, 18)
+    postLbl:SetText(L["Post to:"])
+    local destBtn = TS.UI.Skin.MakeGoldButton(f, 130, 22)
+    destBtn:SetPoint("LEFT", postLbl, "RIGHT", 6, 0)
+    destBtn:SetScript("OnClick", function() SC:_CycleDest() end)
+    self.destBtn = destBtn
     local sell = TS.UI.Skin.MakeGoldButton(f, 90, 24, L["Sell all"])
     sell:SetPoint("BOTTOMRIGHT", -16, 12)
     sell:SetScript("OnClick", function() SC:Confirm() end)
     local clear = TS.UI.Skin.MakeGoldButton(f, 70, 24, L["Clear"])
     clear:SetPoint("RIGHT", sell, "LEFT", -8, 0)
     clear:SetScript("OnClick", function() SC:Clear() end)
+end
+
+-- Liste des destinations possibles : canaux surveillés + guilde (/g via GreenWall).
+function SC:_DestList()
+    local list = {}
+    for _, c in ipairs(TS.db.channels or {}) do list[#list + 1] = c end
+    if #list == 0 and TS.db.channel then list[1] = TS.db.channel end
+    list[#list + 1] = "GUILD"
+    return list
+end
+
+function SC:_DestLabel(dest)
+    if dest == "GUILD" then return "/g (" .. L["Guild"] .. ")" end
+    return dest or "?"
+end
+
+function SC:_CycleDest()
+    local list = self:_DestList()
+    local cur  = self.sendDest or TS.db.channel or list[1]
+    local idx  = 1
+    for i, d in ipairs(list) do if d == cur then idx = i; break end end
+    idx = (idx % #list) + 1
+    self.sendDest = list[idx]
+    if self.destBtn then self.destBtn:SetText(self:_DestLabel(self.sendDest)) end
 end
 
 function SC:_Build()
@@ -181,6 +213,8 @@ end
 
 function SC:Open()
     self:_Build()
+    if not self.sendDest then self.sendDest = TS.db.channel end
+    if self.destBtn then self.destBtn:SetText(self:_DestLabel(self.sendDest)) end
     self:_RefreshRows()
     self.frame:Show()
 end
@@ -206,7 +240,7 @@ function SC:Confirm()
                               itemName = it.itemName, qty = qty, priceText = priceText }
     end
     local lines = BuildMessages(items)
-    if TS.BagSell then TS.BagSell:PostToChat(lines) end
+    if TS.BagSell then TS.BagSell:PostToChat(lines, self.sendDest) end
     self:Clear()
     if self.frame then self.frame:Hide() end
 end

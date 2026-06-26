@@ -174,6 +174,13 @@ function TS:ParseMessage(msg, player, channelName, source)
             self:LogRaw(player, channelName, msg, "skip_chan")
             return
         end
+        -- Filtre "confédération seule" (#5) : canal public bruyant (ex. Trade) → ne garder
+        -- que les expéditeurs connus de la confédération.
+        if self:ChannelConfedOnly(chanClean)
+           and not (self.Guild and self.Guild:IsConfederate(player)) then
+            self:LogRaw(player, channelName, msg, "skip_confed")
+            return
+        end
     end
     local cls = self:Classify(msg)
     if not cls.offerType then

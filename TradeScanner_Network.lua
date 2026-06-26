@@ -420,33 +420,66 @@ function NET:Init()
     end)
 end
 
--- Enregistre le handler GreenWall dès que l'API est disponible.
--- Le handler reçoit (addon, sender, message, echo, guild) :
+-- Enregistre les deux greffes GreenWall dès que disponibles (retry ~1 min) :
+--   (1) le CHAT des co-guildes — pour PARSER les offres WTS/WTB des guildes sœurs ;
+--   (2) le PROTOCOLE addon (CO/OF/…) via GreenWallAPI.
+function NET:RegisterGreenWall(attempt)
+    attempt = attempt or 1
+    self:_HookGreenWallChat()
+    self:_RegisterGreenWallProtocol()
+    -- Réessayer tant que l'un des deux n'est pas en place.
+    if (not self.gwRegistered or not self.gwChatHooked) and attempt < 12 then
+        C_Timer.After(5, function() NET:RegisterGreenWall(attempt + 1) end)
+    end
+end
+
+-- (1) GreenWall n'émet PAS d'event CHAT_MSG_GUILD pour le chat des co-guildes : il
+-- l'affiche directement via gw.ReplicateMessage('GUILD', msg, guild_id, arglist) (cf.
+-- GreenWall/Chat.lua). Le handler /g de TradeScanner ne les voit donc jamais ; le brut
+-- "C#<id>#…" n'arrive que sur le canal-pont → jeté en skip_chan. On hook ReplicateMessage
+-- pour parser ces offres comme du chat de guilde. arglist[2] = auteur d'origine.
+function NET:_HookGreenWallChat()
+    if self.gwChatHooked then return end
+    local gwt = _G.gw
+    if type(gwt) ~= "table" or type(gwt.ReplicateMessage) ~= "function" then return end
+    self.gwChatHooked = true
+    hooksecurefunc(gwt, "ReplicateMessage", function(event, message, guild_id, arglist)
+        if event ~= "GUILD" then return end
+        if not (TS.db and TS.db.scanGuild) then return end
+        local sender = arglist and arglist[2]
+        if not sender or not message or message == "" then return end
+        local playerShort = sender:match("^([^%-]+)") or sender
+        -- Défensif : retire un éventuel tag GreenWall "<id> " en tête (normalement absent
+        -- ici, le tag étant ajouté APRÈS l'argument que reçoit le hook).
+        local clean = message:gsub("^<[^>]+>%s*", "")
+        if TS.db and TS.db.gwDebug then
+            print(string.format("|cFF00CCFF[GW chat]|r <%s> %s: %s",
+                tostring(guild_id), playerShort, tostring(clean)))
+        end
+        local ok, err = pcall(function() TS:ParseMessage(clean, playerShort, "guild", "guild") end)
+        if not ok and TS.db and TS.db.gwDebug then
+            print("|cFFFF4444TS gw chat parse error:|r " .. tostring(err))
+        end
+    end)
+    if TS.db and TS.db.gwDebug then print("|cFF00CCFF[GW]|r co-guild chat hook installed") end
+end
+
+-- (2) Handler du protocole addon. Reçoit (addon, sender, message, echo, guild) :
 --   echo  = mon propre message (renvoyé par le bridge)
 --   guild = vient de MA guilde (déjà reçu via le canal addon "GUILD")
 -- → on n'agit que sur le trafic des guildes sœurs.
-function NET:RegisterGreenWall(attempt)
-    attempt = attempt or 1
+function NET:_RegisterGreenWallProtocol()
     if self.gwRegistered then return end
-
-    if GreenWallAPI and type(GreenWallAPI.AddMessageHandler) == "function" then
-        local ok = pcall(function()
-            GreenWallAPI.AddMessageHandler(function(_, sender, message, echo, guild)
-                if TS.db and TS.db.gwDebug then
-                    print(string.format("|cFF00CCFF[GW←]|r %s (echo=%s guild=%s) %s",
-                        tostring(sender), tostring(echo), tostring(guild), tostring(message)))
-                end
-                if echo or guild then return end
-                NET:HandleMessage(sender, message)
-            end, PREFIX, 0)
-        end)
-        if ok then
-            self.gwRegistered = true
-            return
-        end
-    end
-
-    if attempt < 12 then  -- ~1 min de tentatives (5s × 12)
-        C_Timer.After(5, function() NET:RegisterGreenWall(attempt + 1) end)
-    end
+    if not (GreenWallAPI and type(GreenWallAPI.AddMessageHandler) == "function") then return end
+    local ok = pcall(function()
+        GreenWallAPI.AddMessageHandler(function(_, sender, message, echo, guild)
+            if TS.db and TS.db.gwDebug then
+                print(string.format("|cFF00CCFF[GW←]|r %s (echo=%s guild=%s) %s",
+                    tostring(sender), tostring(echo), tostring(guild), tostring(message)))
+            end
+            if echo or guild then return end
+            NET:HandleMessage(sender, message)
+        end, PREFIX, 0)
+    end)
+    if ok then self.gwRegistered = true end
 end

@@ -2,7 +2,7 @@
 ## Title: Guild Economy
 ## Notes: Guild trade channel scanner with profession integration and craft orders. /ts to open.
 ## Author:
-## Version: 1.6.0
+## Version: 1.7.0
 ## SavedVariables: TradeScannerDB, TradeScannerLog
 
 TradeScanner.lua
@@ -41,3 +41,9 @@ TradeScanner_Guild.lua
 TradeScanner_Trade.lua
 TradeScanner_OrderPanel.lua
 TradeScanner_OrderPanel_Rows.lua
+
+# Fenêtre métier mono-bloc (remplace TradeSkillFrame/CraftFrame) — 3 colonnes
+TradeScanner_ProfWindow.lua
+TradeScanner_ProfWindow_Recipes.lua
+TradeScanner_ProfWindow_Detail.lua
+TradeScanner_ProfWindow_Wants.lua
