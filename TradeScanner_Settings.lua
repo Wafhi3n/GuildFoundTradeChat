@@ -126,6 +126,10 @@ function SET:_BuildToggles(f)
         end)
     MakeCheck(f, L["Debug log (chat)"], 16, y0 - 130,
         function() return db.debugLog end, function(v) db.debugLog = v end)
+    -- Marché GuildFoundMarket : affiche les ventes live de GFM dans les onglets WTS + All
+    -- (sans effet si GFM n'est pas installé ; le pont reste inerte).
+    MakeCheck(f, L["Show GuildFoundMarket sales"], 16, y0 - 156,
+        function() return db.useGFM end, function(v) db.useGFM = v end)
 end
 
 function SET:_BuildSellable(f)

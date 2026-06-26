@@ -65,6 +65,7 @@ L["Scan guild chat (/g)"]                                = "Scanner le canal de 
 L["Cross-realm sync (GreenWall)"]                        = "Sync inter-royaume (GreenWall)"
 L["Bag Alt-right-click to sell"]                         = "Alt+clic droit du sac pour vendre"
 L["Debug log (chat)"]                                    = "Journal de debug (chat)"
+L["Show GuildFoundMarket sales"]                         = "Afficher les ventes GuildFoundMarket"
 L["Manual sellable"]                                     = "Vendable manuel"
 
 -- v1.5 — Composeur de vente multi-item (TradeScanner_SellComposer)

@@ -35,6 +35,12 @@ Need to sell something?
 
 Alt + Right-Click bag items to stack them in a mail-style composer, set a price and quantity per item, then post the whole batch at once. The trade-channel message is automatically split to stay under the chat character limit, and selling an item also flags it as sellable so matching requests light up. Listings are instantly shared with other TradeScanner users.
 
+**GuildFoundMarket Integration**
+
+Does your community also run the **GuildFoundMarket** addon? Guild Economy now pulls those live player listings straight into your trading window. Open the **Sales (WTS)** or **All** tab and the marketplace is scanned in the background — every online seller's current offers appear as normal WTS rows, fully searchable, filterable, and sortable right alongside your chat offers. Market listings are tagged with a green **[M]** marker so you always know the source.
+
+It activates automatically whenever GuildFoundMarket is installed (nothing to configure), refreshes when you open the tab, and can be switched off anytime from the Settings panel. Your local marketplace data is never re-broadcast — Guild Economy simply reads what the GFM network already serves.
+
 **Auction-House-Style Browse**
 
 Find what you want fast with a familiar AH-like interface:
@@ -51,7 +57,7 @@ Smart deduplication keeps the list clean by tracking a single active offer per p
 
 **Additional Features**
 
-• Multi-channel monitoring (watch as many trade channels as you like) + guild chat • Settings panel (gear button) for channels, toggles, and your sellable list • New-version alert when a guildmate runs a newer build • English and French keyword support (WTS, WTB, WTG, VDS, ACH, CHERCHE, B>, and more) • International price parsing (1.5g, 1,5g, 1.50g) • Guild profession directory (/ts profs) • Cross-guild profession sharing over GreenWall • Persistent message history and debug tools • Trade-window order validation with partial-delivery tracking • Addon-to-addon synchronization network • Fully configurable channels, keywords, and notifications
+• GuildFoundMarket integration — live marketplace listings merged into your WTS/All tabs • Multi-channel monitoring (watch as many trade channels as you like) + guild chat • Settings panel (gear button) for channels, toggles, and your sellable list • New-version alert when a guildmate runs a newer build • English and French keyword support (WTS, WTB, WTG, VDS, ACH, CHERCHE, B>, and more) • International price parsing (1.5g, 1,5g, 1.50g) • Guild profession directory (/ts profs) • Cross-guild profession sharing over GreenWall • Persistent message history and debug tools • Trade-window order validation with partial-delivery tracking • Addon-to-addon synchronization network • Fully configurable channels, keywords, and notifications
 
 **Commands**
 

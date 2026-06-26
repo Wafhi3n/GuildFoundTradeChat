@@ -91,6 +91,7 @@ function TS:Init()
     if db.bagSellEnabled == nil then db.bagSellEnabled = true end
     if db.useGreenWall   == nil then db.useGreenWall   = true end
     if db.replaceProfWindow == nil then db.replaceProfWindow = true end  -- fenêtre métier mono-bloc
+    if db.useGFM         == nil then db.useGFM          = true end  -- afficher les ventes GuildFoundMarket
 
     self.db           = db
     self.craftedItems = db.craftedItems
@@ -400,6 +401,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if TS.Guild   then TS.Guild:Init()   end
         if TS.Trade   then TS.Trade:Init()   end
         if TS.BagSell then TS.BagSell:Init() end
+        if TS.GFM     then TS.GFM:Init()     end
         local _origErr = geterrorhandler and geterrorhandler()
         seterrorhandler(function(err)
             local db = TS.db

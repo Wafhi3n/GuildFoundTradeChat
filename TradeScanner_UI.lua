@@ -235,6 +235,9 @@ function UI:BuildTabButton(parent, tabDef, index)
     btn:SetScript("OnClick", function(b)
         UI:SetTab(b.tabID)
         if TS.Net then TS.Net:BroadcastWho() end
+        -- Récolte du marché GFM (WTS + All). Ici = pile d'un hardware event → le broadcast
+        -- canal de Harvest() est autorisé (≠ appel programmatique de SetTab). Throttlé en interne.
+        if (b.tabID == "wts" or b.tabID == "all") and TS.GFM then TS.GFM:Harvest() end
     end)
     btn:SetScript("OnEnter", function(b)
         if UI.activeTab ~= b.tabID then UI.Skin.TabColors(b, "hover") end
@@ -272,6 +275,12 @@ function UI:_GetActiveOffers()
     elseif tab == "sell" then offers = TS:GetSellableOffers()
     end
     offers = offers or {}
+    -- 0) Marché GuildFoundMarket : fusion des ventes live (bucket séparé, jamais persisté
+    --    ni rediffusé sur le réseau TS). Onglets WTS + All uniquement. Les offres ainsi
+    --    ajoutées subissent ensuite les mêmes filtres (texte/HdV) et tri que les offres chat.
+    if (tab == "all" or tab == "wts") and TS.GFM then
+        for _, o in ipairs(TS.GFM:GetOffers()) do offers[#offers + 1] = o end
+    end
     -- 1) Recherche texte (nom d'objet ou joueur)
     if self.searchText and self.searchText ~= "" then
         local needle, filtered = self.searchText:lower(), {}
@@ -300,7 +309,7 @@ end
 
 function UI:_FillRow(row, offer)
     row.offer = offer
-    local srcTag = (offer.source == "guild") and "|cFFFFAA00[G]|r " or ""
+    local srcTag = (offer.source == "guild") and "|cFFFFAA00[G]|r " or (offer.source == "gfm") and "|cFF00FF96[M]|r " or ""
     if offer.offerType == "sell" then row.typeFS:SetText(srcTag .. "|cFF33DD33WTS|r")
     elseif offer.offerType == "gift" then row.typeFS:SetText(srcTag .. "|cFFCC66FFWTG|r")
     else                              row.typeFS:SetText(srcTag .. "|cFF33AAFFWTB|r") end
