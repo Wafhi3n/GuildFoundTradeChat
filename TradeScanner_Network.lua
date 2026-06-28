@@ -247,6 +247,7 @@ function NET:RespondToHello()
             if not TS.Guild.myProfessions then TS.Guild:DetectMyProfessions() end
             NET:BroadcastProfessions(TS.Guild.myProfessions)
         end
+        if TS.Registry then TS.Registry:BroadcastAll() end  -- registre de recettes (RK)
     end)
 end
 
@@ -357,21 +358,13 @@ function NET:HandleMessage(senderName, message)
             TS.Guild:UpdateRoster(playerShort, profs, ver ~= "" and ver or nil)
         end
 
-    elseif cmd == "CO" then self:_HandleCO(message)
+    elseif cmd == "RK" then
+        -- Registre de recettes : Registry possède le format de fil (build + parse).
+        if TS.Registry then TS.Registry:OnNetwork(playerShort, message) end
 
-    elseif cmd == "CC" then
-        local buyer, kind, id = message:match("^CC|([^|]+)|([^|]+)|(%d+)")
-        if TS.Guild and buyer and id then
-            TS.Guild:CancelOrder(buyer, (kind == "E" and "e" or "i") .. id, true)
-        end
-
-    elseif cmd == "CA" then
-        local crafter, buyer, kind, id = message:match("^CA|([^|]+)|([^|]+)|([^|]+)|(%d+)")
-        if TS.Guild and crafter and buyer and id then
-            TS.Guild:AcceptOrder(buyer, (kind == "E" and "e" or "i") .. id, true, crafter)
-        end
-
-    elseif cmd == "CF" then self:_HandleCF(message)
+    -- Verbes d'ordres CO/CC/CA/CF DÉCOMMISSIONNÉS (Étape E) : le système de commandes vit désormais
+    -- dans l'addon « Crafting Order - Classic ». GE n'émet plus et n'agit plus sur ces messages.
+    -- (Handlers _HandleCO/_HandleCF/CancelOrder/AcceptOrder conservés en dead code.)
     end
 end
 

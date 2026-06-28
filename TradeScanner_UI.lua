@@ -25,7 +25,7 @@ local TABS = {
     { id = "buy",    label = "Wanted (WTB)" },
     { id = "gift",   label = "Gifts (WTG)"  },
     { id = "sell",   label = "Sellable"     },
-    { id = "orders", label = "Orders"       },
+    -- Onglet « Orders » retiré (Étape E) : commandes migrées vers « Crafting Order - Classic ».
 }
 
 -- ============================================================

@@ -17,6 +17,39 @@ function TS:_CmdProfs()
     if n == 0 then print("  |cFF888888(no other member known yet)|r") end
 end
 
+-- Registre de recettes (#1/#2/#9) : sans argument, récap "connu/total" par métier ; avec un
+-- objet shift-cliqué, qui dans la confédération connaît la recette qui le produit.
+function TS:_CmdRecipes(arg)
+    if not self.Registry then
+        print("|cFF00CCFFGuild Economy|r Recipe registry unavailable (CraftLink missing).")
+        return
+    end
+    local itemID = tonumber((arg or ""):match("item:(%d+)")) or tonumber(arg)
+    if itemID then
+        local info = self.staticItems and self.staticItems[itemID]
+        local prof = info and info.profession
+        if not prof then
+            print("|cFF00CCFFGuild Economy|r Not a known craftable item.")
+            return
+        end
+        local who = self.Registry:WhoKnowsItem(prof, itemID) or {}
+        print(string.format("|cFF00CCFFGuild Economy|r %s |cFF888888[%s]|r known by: %s",
+            self:GetItemName(itemID), prof,
+            #who > 0 and table.concat(who, ", ") or "|cFF888888nobody known yet|r"))
+        return
+    end
+    local summary = self.Registry:Summary()
+    if #summary == 0 then
+        print("|cFF00CCFFGuild Economy|r No recipes captured yet — open a profession window once.")
+        return
+    end
+    print("|cFF00CCFFGuild Economy|r My known recipes (registry):")
+    for _, e in ipairs(summary) do
+        print(string.format("  |cFFE8B84B%s|r : %d / %d", e.prof, e.known, e.total))
+    end
+    print("  |cFF888888/ts recipes <shift-click item> — who can craft it|r")
+end
+
 function TS:_CmdScan()
     local count, prof = self:ScanOpenProfession()
     if prof then
@@ -236,6 +269,7 @@ function TS:_CmdHelp()
     print("  /ts                       - open/close window")
     print("  /ts order                 - Guild Craft Orders panel")
     print("  /ts profs                 - my professions + guild roster")
+    print("  /ts recipes [item]        - my known recipes / who can craft an item")
     print("  /ts clear                 - clear all offers")
     print("  /ts scan                  - scan open profession window")
     print("  /ts sell <shift-click>    - add/remove a manual sellable item")
@@ -275,6 +309,7 @@ function TS:HandleSlash(msg)
         if self.Settings then self.Settings:Toggle() end
     elseif cmd == "profs" or cmd == "professions" then
         self:_CmdProfs()
+    elseif cmd == "recipes" then self:_CmdRecipes(arg)
     elseif cmd == "clear" then
         self.db.offers = {}
         if self.UI then self.UI:Refresh() end

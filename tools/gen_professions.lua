@@ -16,7 +16,7 @@
 -- Configuration des chemins
 -- ------------------------------------------------------------------
 local MTSL_DATA_DIR = [[D:\Jeux\World of Warcraft\_classic_era_\Interface\AddOns\MissingTradeSkillsList\data\]]
-local OUT_DIR       = [[Data\Professions\]]
+local OUT_DIR       = [[..\CraftLink\CraftLink-1.0\Data\Vanilla\]]  -- données embarquées dans la lib
 local CURATED_FILE  = [[Data\Curated\disenchant.lua]]
 local WOWHEAD_MAP   = [[tools\wowhead_map.lua]]  -- spellID -> itemID produit (cf. tools/README)
 
@@ -72,7 +72,7 @@ end
 -- ------------------------------------------------------------------
 -- Génération
 -- ------------------------------------------------------------------
-local totalSell, totalEnch, fileCount = 0, 0, 0
+local totalSell, totalEnch, totalRecipes, fileCount = 0, 0, 0, 0
 
 for profKey, list in pairs(skills) do
     -- sellable : recettes produisant un objet (items={itemID})
@@ -102,19 +102,31 @@ for profKey, list in pairs(skills) do
     table.sort(sellIDs)
     table.sort(enchants, function(a, b) return a.name < b.name end)
 
+    -- Index canonique de recettes : TOUTES les recettes du métier, triées par spellID.
+    -- C'est la table de positions de bits du registre (cf. Libs/CraftLink-1.0/CraftLink_Registry).
+    -- + itemToSpell (itemID produit -> spellID) : repli runtime pour le scan TradeSkill, qui
+    -- ne capte que l'itemID produit alors que le bitfield est indexé par spellID.
+    local recipeIDs, itemToSpell = {}, {}
+    for _, sk in ipairs(list) do
+        recipeIDs[#recipeIDs + 1] = sk.id
+        local pid = wowheadMap[sk.id] or ((not isEnchanting) and sk.items and sk.items[1]) or nil
+        if pid and pid > 0 then itemToSpell[pid] = sk.id end
+    end
+    table.sort(recipeIDs)
+
     local aliases = buildAliases(profKey)
     local cur     = curated[profKey]
 
     -- Écriture du fichier
     local fname = OUT_DIR .. FILE_NAME[profKey] .. ".lua"
     local f = assert(io.open(fname, "w"))
-    f:write("-- Data/Professions/" .. FILE_NAME[profKey] .. ".lua\n")
+    f:write("-- " .. FILE_NAME[profKey] .. ".lua\n")
     f:write("-- GÉNÉRÉ par tools/gen_professions.lua — NE PAS ÉDITER À LA MAIN.\n")
     f:write("-- Source : MissingTradeSkillsList (faits de jeu : itemID -> nom).\n")
-    f:write("-- Les noms sont indicatifs ; l'addon résout le vrai nom localisé via GetItemInfo.\n\n")
-    f:write("local DATA = TradeScannerData\n")
-    f:write("if not DATA then return end\n\n")
-    f:write("DATA:Register(" .. luaQuote(profKey) .. ", {\n")
+    f:write("-- Données embarquées dans CraftLink (lib self-contained) via RegisterProfession.\n\n")
+    f:write("local CraftLink = LibStub and LibStub:GetLibrary(\"CraftLink-1.0\", true)\n")
+    f:write("if not CraftLink then return end\n\n")
+    f:write("CraftLink:RegisterProfession(" .. luaQuote(profKey) .. ", {\n")
 
     -- aliases
     local aq = {}
@@ -151,12 +163,36 @@ for profKey, list in pairs(skills) do
         f:write("    },\n")
     end
 
+    -- recipes : index canonique (positions de bits du registre). NE PAS réordonner.
+    if #recipeIDs > 0 then
+        f:write("\n    recipes = {\n")
+        for i = 1, #recipeIDs, 12 do
+            local chunk = {}
+            for j = i, math.min(i + 11, #recipeIDs) do chunk[#chunk + 1] = recipeIDs[j] end
+            f:write("        " .. table.concat(chunk, ", ") .. ",\n")
+        end
+        f:write("    },\n")
+        totalRecipes = totalRecipes + #recipeIDs
+    end
+
+    -- itemToSpell : repli itemID produit -> spellID (mapping runtime du scan TradeSkill)
+    local i2sIDs = {}
+    for id in pairs(itemToSpell) do i2sIDs[#i2sIDs + 1] = id end
+    table.sort(i2sIDs)
+    if #i2sIDs > 0 then
+        f:write("\n    itemToSpell = {\n")
+        for _, id in ipairs(i2sIDs) do
+            f:write(string.format("        [%d] = %d,\n", id, itemToSpell[id]))
+        end
+        f:write("    },\n")
+    end
+
     f:write("})\n")
     f:close()
     fileCount = fileCount + 1
-    print(string.format("  [OK] %-16s  sellable=%-4d enchants=%-4d aliases=%d",
-        FILE_NAME[profKey] .. ".lua", #sellIDs, #enchants, #aliases))
+    print(string.format("  [OK] %-16s  sellable=%-4d enchants=%-4d recipes=%-4d aliases=%d",
+        FILE_NAME[profKey] .. ".lua", #sellIDs, #enchants, #recipeIDs, #aliases))
 end
 
-print(string.format("Terminé : %d fichiers, %d sellable, %d enchants au total.",
-    fileCount, totalSell, totalEnch))
+print(string.format("Terminé : %d fichiers, %d sellable, %d enchants, %d recettes (index) au total.",
+    fileCount, totalSell, totalEnch, totalRecipes))

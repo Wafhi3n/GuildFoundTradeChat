@@ -2,6 +2,10 @@
 if GetLocale() ~= "frFR" then return end
 local L = TradeScanner.L
 
+-- Migration des commandes (Étape E)
+L["The craft ORDER system has moved to a dedicated addon:"] = "Le système de COMMANDES de craft a déménagé dans un addon dédié :"
+L["Guild Economy stays your /trade + /guild offer scanner."] = "Guild Economy reste ton scanner d'offres /commerce + /guilde."
+
 -- TradeScanner_ProfPanel
 L["Re-index recipes for the open profession"]            = "Réindexer les recettes du métier ouvert"
 L["Include/exclude the selected recipe"]                 = "Inclure/exclure la recette sélectionnée"

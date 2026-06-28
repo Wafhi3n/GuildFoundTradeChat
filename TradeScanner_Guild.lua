@@ -175,8 +175,17 @@ function Guild:AddOrder(o, fromNetwork)
     end
     -- fromNetwork=false ⇒ commande placée par le joueur (pile de clic) ⇒ propage cross-guilde
     if not fromNetwork and TS.Net then TS.Net:BroadcastOrder(o, true) end
-    -- Alerter seulement pour les nouvelles commandes, pas les resyncs HI
-    if fromNetwork and isNew and self:IHaveProfession(o.profession) then self:AlertOrder(o) end
+    -- Alerter seulement pour les nouvelles commandes (pas les resyncs HI), et au niveau
+    -- RECETTE quand le registre a des données (#2) : « j'ai LE plan », pas juste le métier.
+    if fromNetwork and isNew then
+        local alert
+        if TS.Registry then
+            alert = TS.Registry:ShouldAlertForOrder(o.profession, o.itemID, o.enchantID)
+        else
+            alert = self:IHaveProfession(o.profession)
+        end
+        if alert then self:AlertOrder(o) end
+    end
     TS:RequestRefresh()
 end
 
@@ -355,6 +364,7 @@ function Guild:Init()
             C_Timer.After(3, function() tryDetect(attempt + 1) end)
         elseif TS.Net then
             TS.Net:BroadcastProfessions(self.myProfessions)
+            if TS.Registry then TS.Registry:BroadcastAll() end  -- mes recettes connues (cache)
         end
     end
     if C_Timer and C_Timer.After then

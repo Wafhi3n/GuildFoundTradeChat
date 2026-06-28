@@ -5,6 +5,13 @@
 ## Version: 1.8.0
 ## SavedVariables: TradeScannerDB, TradeScannerLog
 
+# Bibliothèque partagée CraftLink (infra réutilisable embarquée via LibStub) : catalogue de
+# recettes canonique + codec hex du registre + versions. Source canonique : repo CraftLink,
+# synchronisée ici par sync-libs.ps1. lib.xml = point d'inclusion unique.
+Libs\LibStub\LibStub.lua
+Libs\CraftLink-1.0\lib.xml
+Libs\CraftLink-1.0\Data\Vanilla.xml
+
 TradeScanner.lua
 TradeScanner_Offers.lua
 TradeScanner_Craft.lua
@@ -12,18 +19,6 @@ TradeScanner_Commands.lua
 TradeScanner_Locale.lua
 Locale\frFR.lua
 TradeScanner_Data.lua
-
-# Base de métiers statique (générée depuis MTSL + Wowhead, cf. tools/)
-Data\Professions\Alchemy.lua
-Data\Professions\Blacksmithing.lua
-Data\Professions\Cooking.lua
-Data\Professions\Enchanting.lua
-Data\Professions\Engineering.lua
-Data\Professions\FirstAid.lua
-Data\Professions\Leatherworking.lua
-Data\Professions\Mining.lua
-Data\Professions\Poisons.lua
-Data\Professions\Tailoring.lua
 
 TradeScanner_Minimap.lua
 TradeScanner_UI.lua
@@ -35,13 +30,15 @@ TradeScanner_Settings.lua
 TradeScanner_Tooltip.lua
 TradeScanner_ProfPanel.lua
 TradeScanner_Network.lua
+TradeScanner_Registry.lua
 TradeScanner_GFMBridge.lua
 TradeScanner_BagSell.lua
 TradeScanner_SellComposer.lua
 TradeScanner_Guild.lua
-TradeScanner_Trade.lua
-TradeScanner_OrderPanel.lua
-TradeScanner_OrderPanel_Rows.lua
+
+# Système de COMMANDES décommissionné (Étape E) : déplacé dans Legacy/ (non chargé). Les ordres
+# vivent désormais dans l'addon « Crafting Order - Classic ». Voir Legacy/ :
+#   TradeScanner_Trade.lua, TradeScanner_OrderPanel.lua, TradeScanner_OrderPanel_Rows.lua
 
 # Fenêtre métier mono-bloc (remplace TradeSkillFrame/CraftFrame) — 3 colonnes
 TradeScanner_ProfWindow.lua

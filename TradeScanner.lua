@@ -84,6 +84,7 @@ function TS:Init()
     if not db.doneOffers     then db.doneOffers     = {} end
     if not db.guildRoster    then db.guildRoster    = {} end
     if not db.craftOrders    then db.craftOrders    = {} end
+    if not db.knownRecipes   then db.knownRecipes   = {} end  -- [prof] = { [spellID]=true } (registre #1/#2/#9)
     if not db.confedChannels then db.confedChannels = {} end  -- canaux "confédération seule" (#5)
     if db.alertSound == nil  then db.alertSound     = true end
     if db.scanGuild  == nil  then db.scanGuild      = true end
@@ -98,6 +99,7 @@ function TS:Init()
     self.craftedNames = db.craftedNames
 
     if self.LoadStaticData then self:LoadStaticData() end
+    if self.Registry then self.Registry:Init() end  -- catalogue CraftLink (après LoadStaticData)
 
     -- Purge UNKNOWN entries from old Enchanting scan via wrong API
     for id, prof in pairs(self.craftedItems) do
@@ -351,6 +353,23 @@ function TS:RemoveManualSellable(itemID)
     self:RefreshCraftStatus()
 end
 
+-- Migration (Étape E) : prévient UNE fois (flag SV) que le système de commandes a déménagé vers
+-- l'addon dédié « Crafting Order - Classic ». GE reste le scanner d'offres /commerce + /guilde.
+function TS:ShowOrderMigrationNotice()
+    if not (self.db and not self.db.orderMigrationNotice) then return end
+    self.db.orderMigrationNotice = true
+    if not (StaticPopupDialogs and StaticPopup_Show) then return end
+    StaticPopupDialogs["TRADESCANNER_ORDER_MIGRATION"] = {
+        text = "|cFF00CCFFGuild Economy|r\n\n"
+            .. self.L["The craft ORDER system has moved to a dedicated addon:"]
+            .. " |cFFFFCC00Crafting Order - Classic|r.\n\n"
+            .. self.L["Guild Economy stays your /trade + /guild offer scanner."],
+        button1 = OKAY or "OK",
+        timeout = 0, whileDead = true, hideOnEscape = true, showAlert = true,
+    }
+    StaticPopup_Show("TRADESCANNER_ORDER_MIGRATION")
+end
+
 -- ============================================================
 -- EVENTS
 -- ============================================================
@@ -384,6 +403,8 @@ local function HandleProfessionShow()
         scanPending = false
         local ok, err = pcall(function() TS:ScanOpenProfession() end)
         if not ok then print("|cFFFF4444TS scan error:|r " .. tostring(err)) end
+        -- Capture des recettes connues au niveau RECETTE (spellID) → registre + diffusion RK.
+        if TS.Registry then pcall(function() TS.Registry:ScanOpen() end) end
         if TS.ProfWindow then pcall(function() TS.ProfWindow:Refresh() end) end
     end)
 end
@@ -417,6 +438,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         local msg = "|cFF00CCFFGuild Economy|r loaded — /ts to open"
         if cached > 0 then msg = msg .. string.format(" (%d recipes cached)", cached) end
         print(msg)
+        TS:ShowOrderMigrationNotice()   -- prévient une fois que les commandes ont migré (Étape E)
 
     elseif event == "CHAT_MSG_CHANNEL" then
         local msg, player, _, channelName = ...
