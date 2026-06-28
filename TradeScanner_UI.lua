@@ -97,7 +97,7 @@ function UI:_BuildTitleBar(f)
     sellBtn:SetScript("OnLeave", GameTooltip_Hide)
     local searchLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     searchLabel:SetPoint("TOPRIGHT", -184, -18)
-    searchLabel:SetText("Filter")
+    searchLabel:SetText(L["Filter"])
     searchLabel:SetTextColor(UI.Skin.unpack(UI.Skin.color.gold))
     UI.Skin.ApplyShadow(searchLabel)
     local searchBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
@@ -371,7 +371,7 @@ function UI:_UpdateStatus(totalAll, totalSell, profCount)
     if self.tabBtns and self.tabBtns["sell"] then
         local btn = self.tabBtns["sell"]
         if totalSell > 0 then btn.txt:SetText(string.format("|cFFFFCC00Sellable (%d)|r", totalSell))
-        else                  btn.txt:SetText("Sellable") end
+        else                  btn.txt:SetText(L["Sellable"]) end
     end
     if self.statusText then
         local guildState = (TS.db and TS.db.scanGuild)
@@ -396,7 +396,7 @@ function UI:_UpdateEmptyState(isEmpty)
             or self.filterClassID or self.filterQuality
             or self.filterLevelMin or self.filterLevelMax
         if filtered then
-            sc.label:SetText("No offers match your filters.")
+            sc.label:SetText(L["No offers match your filters."])
         else
             sc.label:SetText("Watching " .. TS:ChannelsLabel()
                 .. "  —  WTB and WTS in balance.")

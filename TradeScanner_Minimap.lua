@@ -29,11 +29,11 @@ local function SetupTooltip(btn, mm)
     btn:SetScript("OnEnter", function(b)
         GameTooltip:SetOwner(b, "ANCHOR_LEFT")
         GameTooltip:SetText("Guild Economy", 0, 0.8, 1)
-        GameTooltip:AddLine("Left-click: open/close", 1, 1, 1)
-        GameTooltip:AddLine("Right-drag: move button", 0.6, 0.6, 0.6)
+        GameTooltip:AddLine(TS.L["Left-click: open/close"], 1, 1, 1)
+        GameTooltip:AddLine(TS.L["Right-drag: move button"], 0.6, 0.6, 0.6)
         if mm.pendingAlerts and mm.pendingAlerts > 0 then
-            GameTooltip:AddLine(string.format(
-                "|cFFFFCC00%d craftable request(s)!|r", mm.pendingAlerts), 1, 1, 1)
+            GameTooltip:AddLine("|cFFFFCC00" .. string.format(
+                TS.L["%d craftable request(s)!"], mm.pendingAlerts) .. "|r", 1, 1, 1)
         end
         GameTooltip:Show()
     end)

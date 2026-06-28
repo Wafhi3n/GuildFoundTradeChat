@@ -6,6 +6,22 @@ local L = TradeScanner.L
 L["The craft ORDER system has moved to a dedicated addon:"] = "Le système de COMMANDES de craft a déménagé dans un addon dédié :"
 L["Guild Economy stays your /trade + /guild offer scanner."] = "Guild Economy reste ton scanner d'offres /commerce + /guilde."
 
+-- Chrome scanner (minimap / filtres / lignes / tooltips)
+L["Filter"]                          = "Filtre"
+L["Sellable"]                        = "Vendable"
+L["No offers match your filters."]   = "Aucune offre ne correspond à tes filtres."
+L["Left-click: open/close"]          = "Clic gauche : ouvrir/fermer"
+L["Right-drag: move button"]         = "Clic droit glissé : déplacer le bouton"
+L["%d craftable request(s)!"]        = "%d demande(s) réalisable(s) !"
+L["Sale"]                            = "Vente"
+L["Gift"]                            = "Don"
+L["Wanted"]                          = "Recherche"
+L[" by "]                            = " par "
+L["Price: "]                         = "Prix : "
+L["You can craft this item!"]        = "Tu peux fabriquer cet objet !"
+L["Profession: "]                    = "Métier : "
+L["Whisper "]                        = "Chuchoter à "
+
 -- TradeScanner_ProfPanel
 L["Re-index recipes for the open profession"]            = "Réindexer les recettes du métier ouvert"
 L["Include/exclude the selected recipe"]                 = "Inclure/exclure la recette sélectionnée"

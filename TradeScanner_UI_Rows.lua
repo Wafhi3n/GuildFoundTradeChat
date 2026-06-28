@@ -28,16 +28,16 @@ local function UIRowTooltip(r)
     end
     GameTooltip:AddLine(" ")
     local ot = r.offer.offerType
-    local typeLabel = (ot == "sell" and "Sale") or (ot == "gift" and "Gift") or "Wanted"
+    local typeLabel = (ot == "sell" and TS.L["Sale"]) or (ot == "gift" and TS.L["Gift"]) or TS.L["Wanted"]
     local srcLabel  = r.offer.source == "guild" and " |cFFFFAA00[Guild]|r" or " |cFF00CCFF[Channel]|r"
-    GameTooltip:AddLine(typeLabel .. srcLabel .. " by |cFFFFFFFF" .. (r.offer.player or "?") .. "|r")
+    GameTooltip:AddLine(typeLabel .. srcLabel .. TS.L[" by "] .. "|cFFFFFFFF" .. (r.offer.player or "?") .. "|r")
     if r.offer.priceText then
-        GameTooltip:AddLine("Price: |cFFFFDD00" .. r.offer.priceText .. "|r")
+        GameTooltip:AddLine(TS.L["Price: "] .. "|cFFFFDD00" .. r.offer.priceText .. "|r")
     end
     if r.offer.canCraft then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("|cFFFFCC00You can craft this item!|r")
-        GameTooltip:AddLine("Profession: " .. (r.offer.profession or "?"), 1, 0.78, 0)
+        GameTooltip:AddLine("|cFFFFCC00" .. TS.L["You can craft this item!"] .. "|r")
+        GameTooltip:AddLine(TS.L["Profession: "] .. (r.offer.profession or "?"), 1, 0.78, 0)
     end
     GameTooltip:AddLine("|cFF888888Left-click to whisper|r")
     GameTooltip:Show()
@@ -69,7 +69,7 @@ local function AddRowButtons(row)
     wBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
     wBtn:SetScript("OnEnter", function()
         GameTooltip:SetOwner(wBtn, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Whisper " .. (row.offer and row.offer.player or "?"))
+        GameTooltip:SetText(TS.L["Whisper "] .. (row.offer and row.offer.player or "?"))
         GameTooltip:Show()
     end)
     wBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
