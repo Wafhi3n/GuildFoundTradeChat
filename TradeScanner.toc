@@ -1,24 +1,15 @@
 ## Interface: 11503
 ## Title: Guild Economy
-## Notes: Guild trade channel scanner with profession integration and craft orders. /ts to open.
+## Notes: Guild trade channel scanner (chat + guild offers, GreenWall confederation). /ts to open.
 ## Author:
-## Version: 1.8.0
+## Version: 2.0.0
 ## SavedVariables: TradeScannerDB, TradeScannerLog
-
-# Bibliothèque partagée CraftLink (infra réutilisable embarquée via LibStub) : catalogue de
-# recettes canonique + codec hex du registre + versions. Source canonique : repo CraftLink,
-# synchronisée ici par sync-libs.ps1. lib.xml = point d'inclusion unique.
-Libs\LibStub\LibStub.lua
-Libs\CraftLink-1.0\lib.xml
-Libs\CraftLink-1.0\Data\Vanilla.xml
 
 TradeScanner.lua
 TradeScanner_Offers.lua
-TradeScanner_Craft.lua
 TradeScanner_Commands.lua
 TradeScanner_Locale.lua
 Locale\frFR.lua
-TradeScanner_Data.lua
 
 TradeScanner_Minimap.lua
 TradeScanner_UI.lua
@@ -28,9 +19,7 @@ TradeScanner_UI_Categories.lua
 TradeScanner_UI_Filters.lua
 TradeScanner_Settings.lua
 TradeScanner_Tooltip.lua
-TradeScanner_ProfPanel.lua
 TradeScanner_Network.lua
-TradeScanner_Registry.lua
 TradeScanner_GFMBridge.lua
 TradeScanner_BagSell.lua
 TradeScanner_SellComposer.lua
@@ -40,8 +29,8 @@ TradeScanner_Guild.lua
 # vivent désormais dans l'addon « Crafting Order - Classic ». Voir Legacy/ :
 #   TradeScanner_Trade.lua, TradeScanner_OrderPanel.lua, TradeScanner_OrderPanel_Rows.lua
 
-# Fenêtre métier mono-bloc (remplace TradeSkillFrame/CraftFrame) — 3 colonnes
-TradeScanner_ProfWindow.lua
-TradeScanner_ProfWindow_Recipes.lua
-TradeScanner_ProfWindow_Detail.lua
-TradeScanner_ProfWindow_Wants.lua
+# Étape F (2026-06-30) : tout le craft-social (registre de recettes CraftLink, roster de
+# métiers, indicateur "tu peux crafter cette demande", fenêtre métier custom) a été RETIRÉ
+# de Guild Economy — il vit désormais exclusivement dans « Crafting Order - Classic », qui
+# ne dépend plus d'aucune copie CraftLink embarquée ici (fin du risque de clobber inter-addon).
+# GE reste un pur scanner d'offres de trade (chat + guilde + confédération GreenWall).

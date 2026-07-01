@@ -11,7 +11,6 @@ local COLUMNS = {
     { label = "Price",   w = 88,  x = 275 },
     { label = "Player",  w = 115, x = 367 },
     { label = "Age",     w = 34,  x = 486 },
-    { label = "Provide", w = 120, x = 524 },
 }
 
 local function UIRowTooltip(r)
@@ -33,11 +32,6 @@ local function UIRowTooltip(r)
     GameTooltip:AddLine(typeLabel .. srcLabel .. TS.L[" by "] .. "|cFFFFFFFF" .. (r.offer.player or "?") .. "|r")
     if r.offer.priceText then
         GameTooltip:AddLine(TS.L["Price: "] .. "|cFFFFDD00" .. r.offer.priceText .. "|r")
-    end
-    if r.offer.canCraft then
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("|cFFFFCC00" .. TS.L["You can craft this item!"] .. "|r")
-        GameTooltip:AddLine(TS.L["Profession: "] .. (r.offer.profession or "?"), 1, 0.78, 0)
     end
     GameTooltip:AddLine("|cFF888888Left-click to whisper|r")
     GameTooltip:Show()
@@ -92,10 +86,6 @@ function UI:BuildRow(parent, index)
     bg:SetColorTexture(UI.Skin.unpack(zebra))
     local hi = row:CreateTexture(nil, "HIGHLIGHT")
     hi:SetAllPoints(); hi:SetColorTexture(UI.Skin.unpack(UI.Skin.color.rowHover))
-    local craftBar = row:CreateTexture(nil, "ARTWORK")
-    craftBar:SetWidth(3); craftBar:SetPoint("TOPLEFT"); craftBar:SetPoint("BOTTOMLEFT")
-    craftBar:SetColorTexture(1, 0.78, 0, 1); craftBar:Hide()
-    row.craftBar = craftBar
     row.typeFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     row.typeFS:SetPoint("LEFT", COLUMNS[1].x, 0); row.typeFS:SetWidth(COLUMNS[1].w); row.typeFS:SetJustifyH("CENTER")
     row.itemFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -110,11 +100,8 @@ function UI:BuildRow(parent, index)
     row.ageFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     row.ageFS:SetPoint("LEFT", COLUMNS[5].x, 0); row.ageFS:SetWidth(COLUMNS[5].w)
     row.ageFS:SetJustifyH("CENTER"); row.ageFS:SetTextColor(0.5, 0.5, 0.5)
-    row.craftFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    row.craftFS:SetPoint("LEFT", COLUMNS[6].x, 0); row.craftFS:SetWidth(COLUMNS[6].w)
-    row.craftFS:SetJustifyH("LEFT"); row.craftFS:SetTextColor(1, 0.78, 0)
     -- Ombre portée 1px noire sur chaque cellule (lisibilité sur fond texturé).
-    for _, fs in ipairs({ row.typeFS, row.itemFS, row.priceFS, row.playerFS, row.ageFS, row.craftFS }) do
+    for _, fs in ipairs({ row.typeFS, row.itemFS, row.priceFS, row.playerFS, row.ageFS }) do
         UI.Skin.ApplyShadow(fs)
     end
     AddRowButtons(row)

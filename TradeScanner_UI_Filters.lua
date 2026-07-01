@@ -1,7 +1,6 @@
 -- TradeScanner_UI_Filters.lua
 -- En-têtes de colonnes cliquables (tri façon Hôtel des ventes) pour le tableau
 -- d'offres de la fenêtre principale, + la logique de tri UI:_SortOffers.
--- La colonne "Provide" n'est pas triable.
 
 local TS = TradeScanner
 local UI = TS.UI
@@ -13,7 +12,6 @@ local COLUMNS = {
     { label = "Price",   w = 88,  x = 275, sort = "price"  },
     { label = "Player",  w = 115, x = 367, sort = "player" },
     { label = "Age",     w = 34,  x = 486, sort = "age"    },
-    { label = "Provide", w = 120, x = 524 },
 }
 
 local ARROW_UP   = " \226\150\178"  -- ▲

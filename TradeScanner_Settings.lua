@@ -1,18 +1,16 @@
 -- TradeScanner_Settings.lua
 -- Panneau de réglages (ouvert par le bouton engrenage de la fenêtre principale ou
 -- /ts settings). Regroupe : canaux surveillés (multi-canaux v1.5), canal d'envoi,
--- toggles (son, /g, GreenWall, bagSell, debug) et gestion du vendable manuel
--- (déplacé depuis l'ancien bloc « Sell+ » de la fenêtre principale).
+-- toggles (son, /g, GreenWall, bagSell, debug).
 
 local TS  = TradeScanner
 local SET = {}
 TS.Settings = SET
 local L   = TS.L
 
-local W, H        = 520, 440
+local W, H        = 300, 320
 local ROW_H       = 18
 local MAX_CHAN    = 7
-local MAX_SELL    = 120  -- plafond de lignes pooled pour le vendable manuel
 
 -- ============================================================
 -- HELPERS
@@ -107,7 +105,7 @@ function SET:_BuildToggles(f)
     sep:SetPoint("TOPLEFT", 14, y0 + 6); sep:SetPoint("TOPRIGHT", f, "TOPLEFT", 250, y0 + 6)
 
     local db = TS.db
-    MakeCheck(f, L["Craft alert sound"], 16, y0,
+    MakeCheck(f, L["Update-notification sound"], 16, y0,
         function() return db.alertSound end, function(v) db.alertSound = v end)
     MakeCheck(f, L["Scan guild chat (/g)"], 16, y0 - 26,
         function() return db.scanGuild end, function(v) db.scanGuild = v end)
@@ -115,56 +113,12 @@ function SET:_BuildToggles(f)
         function() return db.useGreenWall end, function(v) db.useGreenWall = v end)
     MakeCheck(f, L["Bag Alt-right-click to sell"], 16, y0 - 78,
         function() return db.bagSellEnabled end, function(v) db.bagSellEnabled = v end)
-    MakeCheck(f, L["Replace profession window"], 16, y0 - 104,
-        function() return db.replaceProfWindow end,
-        function(v)
-            db.replaceProfWindow = v
-            -- Désactivé en cours de session : restaurer l'UI Blizzard immédiatement.
-            if not v and TS.ProfWindow then
-                TS.ProfWindow:Hide(); TS.ProfWindow:RestoreNative()
-            end
-        end)
-    MakeCheck(f, L["Debug log (chat)"], 16, y0 - 130,
+    MakeCheck(f, L["Debug log (chat)"], 16, y0 - 104,
         function() return db.debugLog end, function(v) db.debugLog = v end)
     -- Marché GuildFoundMarket : affiche les ventes live de GFM dans les onglets WTS + All
     -- (sans effet si GFM n'est pas installé ; le pont reste inerte).
-    MakeCheck(f, L["Show GuildFoundMarket sales"], 16, y0 - 156,
+    MakeCheck(f, L["Show GuildFoundMarket sales"], 16, y0 - 130,
         function() return db.useGFM end, function(v) db.useGFM = v end)
-end
-
-function SET:_BuildSellable(f)
-    local hdr = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    hdr:SetPoint("TOPLEFT", 270, -40)
-    hdr:SetText("|cFF88FF88" .. L["Manual sellable"] .. "|r")
-
-    local addBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
-    addBox:SetSize(140, 18); addBox:SetPoint("TOPLEFT", 272, -62); addBox:SetAutoFocus(false)
-    addBox:SetScript("OnEscapePressed", function(b) b:SetText(""); b:ClearFocus() end)
-    self.sellAddBox = addBox
-    local function DoAdd()
-        local txt    = addBox:GetText() or ""
-        local itemID = tonumber(txt:match("|Hitem:(%d+)")) or tonumber(txt:match("^%s*(%d+)%s*$"))
-        if itemID then
-            TS:AddManualSellable(itemID); addBox:SetText(""); addBox:ClearFocus()
-            self:Refresh(); if TS.UI then TS.UI:Refresh() end
-        else
-            print("|cFF00CCFFGuild Economy|r " .. L["Shift-click an item or enter an item ID."])
-        end
-    end
-    addBox:SetScript("OnEnterPressed", DoAdd)
-    local addBtn = TS.UI.Skin.MakeGoldButton(f, 50, 22, L["Add"])
-    addBtn:SetPoint("LEFT", addBox, "RIGHT", 4, 0)
-    addBtn:SetScript("OnClick", DoAdd)
-
-    local scroll = CreateFrame("ScrollFrame", "TradeScannerSettingsSellScroll", f, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", 272, -88)
-    scroll:SetSize(210, H - 130)
-    local content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(210, H - 130)
-    scroll:SetScrollChild(content)
-    self.sellScroll  = scroll
-    self.sellContent = content
-    self.sellRows    = {}
 end
 
 function SET:Build()
@@ -191,7 +145,6 @@ function SET:Build()
     self:_BuildChannels(f)
     self:_BuildSendChannel(f)
     self:_BuildToggles(f)
-    self:_BuildSellable(f)
     self.frame = f
 end
 
@@ -219,43 +172,9 @@ function SET:_RefreshChannels()
     end
 end
 
-function SET:_RefreshSellable()
-    if not self.sellContent then return end
-    local items = {}
-    for itemID in pairs(TS.db.manualSellable or {}) do items[#items + 1] = itemID end
-    table.sort(items, function(a, b)
-        return (TS:GetItemName(a) or "") < (TS:GetItemName(b) or "")
-    end)
-    for i, row in ipairs(self.sellRows) do row:Hide() end
-    local shown = math.min(#items, MAX_SELL)
-    for i = 1, shown do
-        local row = self.sellRows[i]
-        if not row then
-            row = CreateFrame("Frame", nil, self.sellContent)
-            row:SetSize(200, ROW_H)
-            row.fs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            row.fs:SetPoint("LEFT", 2, 0); row.fs:SetWidth(176)
-            row.fs:SetJustifyH("LEFT"); row.fs:SetWordWrap(false)
-            row.rm = MakeRemoveBtn(row)
-            row.rm:SetPoint("RIGHT", 0, 0)
-            self.sellRows[i] = row
-        end
-        local itemID = items[i]
-        row:SetPoint("TOPLEFT", 0, -(i - 1) * ROW_H)
-        row.fs:SetText(TS:GetItemName(itemID))
-        row.rm:SetScript("OnClick", function()
-            TS:RemoveManualSellable(itemID)
-            self:Refresh(); if TS.UI then TS.UI:Refresh() end
-        end)
-        row:Show()
-    end
-    self.sellContent:SetHeight(math.max(shown * ROW_H, 1))
-end
-
 function SET:Refresh()
     if not self.frame then return end
     self:_RefreshChannels()
-    self:_RefreshSellable()
 end
 
 -- ============================================================

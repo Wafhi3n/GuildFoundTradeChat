@@ -194,18 +194,16 @@ function TS:ParseMessage(msg, player, channelName, source)
             itemID     = nil, itemName = nil, itemLink = nil,
             priceText  = cls.priceText, priceValue = cls.priceValue,
             qtyText    = nil, isService = cls.isService, rawMsg = msg,
-            timestamp  = time(), canCraft = false, profession = nil,
+            timestamp  = time(),
             source     = source,
         })
     else
         for _, it in ipairs(cls.items) do
-            local cat, prof = self:GetProducible(it.itemID)
             self:AddOffer({
                 offerType    = it.offerType, player = player,
                 itemID       = it.itemID, itemName = it.name, itemLink = it.link,
                 priceText    = it.priceText, priceValue = it.priceValue,
                 qtyText      = it.qtyText, rawMsg = msg, timestamp = time(),
-                canCraft     = cat ~= nil, sellCategory = cat, profession = prof,
                 source       = source,
             })
         end
@@ -241,9 +239,6 @@ function TS:AddOffer(offer)
                 existing.priceText    = offer.priceText
                 existing.priceValue   = offer.priceValue
                 existing.qtyText      = offer.qtyText
-                existing.canCraft     = offer.canCraft
-                existing.sellCategory = offer.sellCategory
-                existing.profession   = offer.profession
                 existing.source       = offer.source
                 -- New post from same player clears "done" status
                 if db.doneOffers then
@@ -271,10 +266,6 @@ function TS:AddOffer(offer)
 
     table.insert(db.offers, 1, offer)
     if #db.offers > MAX_OFFERS then table.remove(db.offers) end
-    if offer.offerType == "buy" and offer.canCraft
-       and self:CanFulfill(offer.sellCategory, offer.profession) then
-        self:AlertCraftable(offer)
-    end
     self:RequestRefresh()
     if self.Net and offer.source ~= "network" then self.Net:BroadcastOffer(offer) end
 end
@@ -292,7 +283,6 @@ end
 function TS:CreateLocalOffer(itemID, itemLink, itemName, priceText, priceValue, qtyText, note)
     if not itemID then return end
     local me = UnitName("player") or "?"
-    local cat, prof = self:GetProducible(itemID)
     self:AddOffer({
         offerType    = "sell", player = me,
         itemID       = itemID, itemName = itemName or self:GetItemName(itemID),
@@ -300,124 +290,6 @@ function TS:CreateLocalOffer(itemID, itemLink, itemName, priceText, priceValue, 
         priceText    = priceText, priceValue = priceValue or 0,
         qtyText      = qtyText, rawMsg = (note ~= "" and note) or nil,
         timestamp    = time(),
-        canCraft     = cat ~= nil, sellCategory = cat, profession = prof,
         source       = "self",
     })
-end
-
--- ============================================================
--- SELLABLE + GUILD WANTS + CRAFT ALERTS
--- ============================================================
-
--- True if the local player can personally fulfil a producible item:
--- manually flagged, a scanned recipe, or a profession actually learned.
--- (≠ "someone in the guild can craft it" — that's just GetProducible.)
-function TS:CanFulfill(cat, prof)
-    if not cat then return false end
-    if cat == "manual" or cat == "scan" then return true end
-    return (self.Guild and self.Guild:IHaveProfession(prof)) == true
-end
-
-function TS:GetSellableOffers()
-    local now, result = time(), {}
-    for _, offer in ipairs(self.db.offers) do
-        if offer.offerType == "buy"
-           and (now - offer.timestamp) <= OFFER_EXPIRY
-           and offer.itemID then
-            local cat, prof = self:GetProducible(offer.itemID)
-            if self:CanFulfill(cat, prof) then
-                table.insert(result, offer)
-            end
-        end
-    end
-    return result
-end
-
--- Flat list of chat WTB offers whose item is craftable in profCanonical.
--- Feeds the "Chat requests" section of the Orders tab (one row per offer).
-function TS:GetCraftableWantsFor(profCanonical)
-    local now, out = time(), {}
-    if not profCanonical then return out end
-    local me = UnitName("player") or "?"
-    for _, offer in ipairs(self.db.offers) do
-        if offer.offerType == "buy" and offer.itemID and offer.player ~= me
-           and (now - offer.timestamp) <= OFFER_EXPIRY then
-            local cat, prof = self:GetProducible(offer.itemID)
-            if cat and self:ResolveProfession(prof) == profCanonical then
-                out[#out + 1] = offer
-            end
-        end
-    end
-    return out
-end
-
-local function AddWant(bucket, index, key, offer, name)
-    local entry = index[key]
-    if not entry then
-        entry = {
-            itemID  = offer and offer.itemID,
-            name    = name,
-            link    = offer and offer.itemLink,
-            players = {},
-            seen    = {},
-            count   = 0,
-        }
-        index[key] = entry
-        table.insert(bucket, entry)
-    end
-    local p = offer and offer.player
-    if p and not entry.seen[p] then
-        entry.seen[p] = true
-        table.insert(entry.players, p)
-        entry.count = entry.count + 1
-    end
-    if offer and offer.itemLink and not entry.link then entry.link = offer.itemLink end
-end
-
-function TS:GetGuildWants(profName)
-    local result = { disenchant = {}, sellable = {}, enchants = {} }
-    if not profName then return result end
-    local idxDis, idxSell, idxEnch = {}, {}, {}
-    local disMats = self:GetDisenchantMats(profName)
-    local now = time()
-    for _, offer in ipairs(self.db.offers) do
-        if offer.offerType == "buy" and (now - offer.timestamp) <= OFFER_EXPIRY then
-            if offer.itemID then
-                if disMats[offer.itemID] then
-                    AddWant(result.disenchant, idxDis, offer.itemID, offer,
-                            self:GetItemName(offer.itemID, disMats[offer.itemID]))
-                else
-                    local cat, prof = self:GetProducible(offer.itemID)
-                    if cat then
-                        local canonical = self:ResolveProfession(prof)
-                        if cat == "manual" or canonical == profName then
-                            AddWant(result.sellable, idxSell, offer.itemID, offer,
-                                    self:GetItemName(offer.itemID, offer.itemName))
-                        end
-                    end
-                end
-            elseif offer.rawMsg then
-                local low = offer.rawMsg:lower()
-                for _, ench in ipairs(self.staticEnchants or {}) do
-                    if self:ResolveProfession(ench.profession) == profName then
-                        if low:find(ench.name:lower(), 1, true) then
-                            AddWant(result.enchants, idxEnch, ench.name, offer, ench.name)
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return result
-end
-
-function TS:AlertCraftable(offer)
-    local itemStr = offer.itemLink or offer.itemName or "?"
-    local prof    = offer.profession or "?"
-    print(string.format(
-        "|cFF00CCFFGuild Economy|r |cFFFFCC00>> CRAFT|r [%s] %s wants %s  — |cFFFFFFFF/w %s|r",
-        prof, offer.player, itemStr, offer.player
-    ))
-    if self.db.alertSound then PlaySound(1191) end
-    if self.Minimap then self.Minimap:SetAlert(true) end
 end

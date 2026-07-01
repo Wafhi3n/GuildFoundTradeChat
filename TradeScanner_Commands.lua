@@ -3,104 +3,6 @@
 
 local TS = TradeScanner
 
-function TS:_CmdProfs()
-    if not self.Guild then return end
-    local mine = self.Guild.myProfessions or self.Guild:DetectMyProfessions()
-    print("|cFF00CCFFGuild Economy|r My professions: " ..
-        (#mine > 0 and table.concat(mine, ", ") or "|cFF888888none|r"))
-    local n = 0
-    for player, info in pairs(self.db.guildRoster) do
-        n = n + 1
-        print(string.format("  |cFFCCCCCC%s|r : %s",
-            player, table.concat(info.professions or {}, ", ")))
-    end
-    if n == 0 then print("  |cFF888888(no other member known yet)|r") end
-end
-
--- Registre de recettes (#1/#2/#9) : sans argument, récap "connu/total" par métier ; avec un
--- objet shift-cliqué, qui dans la confédération connaît la recette qui le produit.
-function TS:_CmdRecipes(arg)
-    if not self.Registry then
-        print("|cFF00CCFFGuild Economy|r Recipe registry unavailable (CraftLink missing).")
-        return
-    end
-    local itemID = tonumber((arg or ""):match("item:(%d+)")) or tonumber(arg)
-    if itemID then
-        local info = self.staticItems and self.staticItems[itemID]
-        local prof = info and info.profession
-        if not prof then
-            print("|cFF00CCFFGuild Economy|r Not a known craftable item.")
-            return
-        end
-        local who = self.Registry:WhoKnowsItem(prof, itemID) or {}
-        print(string.format("|cFF00CCFFGuild Economy|r %s |cFF888888[%s]|r known by: %s",
-            self:GetItemName(itemID), prof,
-            #who > 0 and table.concat(who, ", ") or "|cFF888888nobody known yet|r"))
-        return
-    end
-    local summary = self.Registry:Summary()
-    if #summary == 0 then
-        print("|cFF00CCFFGuild Economy|r No recipes captured yet — open a profession window once.")
-        return
-    end
-    print("|cFF00CCFFGuild Economy|r My known recipes (registry):")
-    for _, e in ipairs(summary) do
-        print(string.format("  |cFFE8B84B%s|r : %d / %d", e.prof, e.known, e.total))
-    end
-    print("  |cFF888888/ts recipes <shift-click item> — who can craft it|r")
-end
-
-function TS:_CmdScan()
-    local count, prof = self:ScanOpenProfession()
-    if prof then
-        print(string.format("|cFF00CCFFGuild Economy|r %s: %d recipes indexed.", prof, count))
-    else
-        print("|cFF00CCFFGuild Economy|r Open a profession window first.")
-    end
-end
-
-function TS:_CmdPanel()
-    if not self.ProfPanel then
-        print("|cFF00CCFFGuild Economy|r ProfPanel not loaded.")
-        return
-    end
-    local name, isCraft = self:GetOpenProfessionInfo()
-    if not name then
-        print("|cFF00CCFFGuild Economy|r No profession window open (neither TradeSkill nor Craft).")
-        return
-    end
-    print(string.format("|cFF00CCFFGuild Economy|r Profession: '%s' (%s) → canonical: '%s'",
-        name, isCraft and "Craft" or "TradeSkill", tostring(self:ResolveProfession(name))))
-    local ok, err = pcall(function() self.ProfPanel:OnTradeSkillShow() end)
-    if not ok then print("|cFFFF4444Panel error:|r " .. tostring(err)) end
-end
-
-function TS:_CmdSell(arg)
-    local itemID = tonumber((arg or ""):match("item:(%d+)")) or tonumber(arg)
-    if itemID then
-        if self.db.manualSellable[itemID] then
-            self:RemoveManualSellable(itemID)
-            print("|cFF00CCFFGuild Economy|r Removed from sellable: " .. self:GetItemName(itemID))
-        else
-            self:AddManualSellable(itemID)
-            print("|cFF00CCFFGuild Economy|r Added to sellable: " .. self:GetItemName(itemID))
-        end
-    else
-        print("|cFF00CCFFGuild Economy|r Usage: /ts sell <shift-click item>")
-    end
-end
-
-function TS:_CmdExclude(arg)
-    local itemID = tonumber((arg or ""):match("item:(%d+)")) or tonumber(arg)
-    if itemID then
-        local excluded = self:ToggleExcluded(itemID)
-        local state = excluded and "|cFFFF4444excluded|r" or "|cFF33DD33included|r"
-        print("|cFF00CCFFGuild Economy|r " .. self:GetItemName(itemID) .. " " .. state)
-    else
-        print("|cFF00CCFFGuild Economy|r Usage: /ts exclude <shift-click item>")
-    end
-end
-
 function TS:_CmdChannel(arg)
     local sub, rest = (arg or ""):match("^(%S*)%s*(.*)$")
     sub = (sub or ""):lower()
@@ -267,13 +169,7 @@ end
 function TS:_CmdHelp()
     print("|cFF00CCFFGuild Economy|r --- Help ---")
     print("  /ts                       - open/close window")
-    print("  /ts order                 - Guild Craft Orders panel")
-    print("  /ts profs                 - my professions + guild roster")
-    print("  /ts recipes [item]        - my known recipes / who can craft an item")
     print("  /ts clear                 - clear all offers")
-    print("  /ts scan                  - scan open profession window")
-    print("  /ts sell <shift-click>    - add/remove a manual sellable item")
-    print("  /ts exclude <shift-click> - exclude/include an item from scan")
     print("  /ts settings              - open the settings panel")
     print("  /ts channel <name>        - set default send channel")
     print("  /ts channel add <name>    - watch an extra channel")
@@ -284,7 +180,7 @@ function TS:_CmdHelp()
     print("  /ts wts                   - toggle bag Alt-right-click WTS shortcut")
     print("  /ts confed                - toggle cross-realm sync (GreenWall)")
     print("  /ts gwdebug               - toggle GreenWall send/recv debug prints")
-    print("  /ts alert                 - toggle craft alert sound")
+    print("  /ts alert                 - toggle update-notification sound")
     print("  /ts debug                 - toggle real-time channel display")
     print("  /ts log [N]               - show last N messages (default: 30)")
     print("  /ts retest [N]            - replay parser on log (validate changes)")
@@ -303,28 +199,19 @@ function TS:HandleSlash(msg)
     cmd = cmd or ""
     if cmd == "" then
         if self.UI then self.UI:Toggle() end
-    elseif cmd == "order" or cmd == "orders" then
-        if self.OrderPanel then self.OrderPanel:Toggle() end
     elseif cmd == "settings" or cmd == "config" or cmd == "options" then
         if self.Settings then self.Settings:Toggle() end
-    elseif cmd == "profs" or cmd == "professions" then
-        self:_CmdProfs()
-    elseif cmd == "recipes" then self:_CmdRecipes(arg)
     elseif cmd == "clear" then
         self.db.offers = {}
         if self.UI then self.UI:Refresh() end
         print("|cFF00CCFFGuild Economy|r Offers cleared.")
-    elseif cmd == "scan" then self:_CmdScan()
-    elseif cmd == "panel" then self:_CmdPanel()
-    elseif cmd == "sell" then self:_CmdSell(arg)
-    elseif cmd == "exclude" then self:_CmdExclude(arg)
     elseif cmd == "channel" then self:_CmdChannel(arg)
     elseif cmd == "add" then self:_CmdAdd(arg)
     elseif cmd == "remove" then self:_CmdRemove(arg)
     elseif cmd == "alert" then
         self.db.alertSound = not self.db.alertSound
         local state = self.db.alertSound and "|cFF33DD33enabled|r" or "|cFFFF4444disabled|r"
-        print("|cFF00CCFFGuild Economy|r Craft alert sound: " .. state)
+        print("|cFF00CCFFGuild Economy|r Update-notification sound: " .. state)
     elseif cmd == "debug" then
         self.db.debugLog = not self.db.debugLog
         local state = self.db.debugLog and "|cFF33DD33ON|r" or "|cFFFF4444OFF|r"

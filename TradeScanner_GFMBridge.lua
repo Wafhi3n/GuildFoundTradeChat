@@ -114,7 +114,6 @@ end
 
 -- Construit une offre TS "sell" à partir d'une ligne de catalogue GFM.
 local function makeOffer(seller, id, suffix, qty, price)
-    local cat, prof = TS:GetProducible(id)
     return {
         offerType    = "sell",
         player       = seller,
@@ -125,9 +124,6 @@ local function makeOffer(seller, id, suffix, qty, price)
         qtyText      = (qty and qty > 1) and ("x" .. qty) or nil,
         timestamp    = time(),
         source       = "gfm",
-        canCraft     = cat ~= nil,
-        sellCategory = cat,
-        profession   = prof,
         suffix       = suffix,
     }
 end

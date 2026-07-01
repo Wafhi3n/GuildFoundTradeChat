@@ -233,9 +233,6 @@ function SC:Confirm()
         local qtyText = qty > 1 and ("x" .. qty) or nil
         -- Offre locale + broadcast réseau (garanti même si le chat échoue).
         TS:CreateLocalOffer(it.itemID, it.itemLink, it.itemName, priceText, priceValue, qtyText, "")
-        -- Unification : vendre un objet le marque aussi « vendable » (persistant) →
-        -- il remonte dans l'onglet Sellable + alertes craft. Retrait via Réglages.
-        TS:AddManualSellable(it.itemID)
         items[#items + 1] = { itemID = it.itemID, itemLink = it.itemLink,
                               itemName = it.itemName, qty = qty, priceText = priceText }
     end

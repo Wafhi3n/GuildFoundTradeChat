@@ -1,4 +1,4 @@
--- TradeScanner - Guild Economy: trade channel scanner with profession integration.
+-- TradeScanner - Guild Economy: trade channel scanner (chat + guild offers, GreenWall confederation).
 -- Usage: /ts  /tradescan
 
 TradeScanner = {}
@@ -10,7 +10,6 @@ local TS = TradeScanner
 
 local OFFER_EXPIRY = 1800  -- 30 minutes
 local MAX_OFFERS   = 300
-local ORDER_EXPIRY = 7 * 24 * 3600  -- 7 jours : purge des commandes de craft dormantes
 
 local DEFAULTS = {
     channel  = "freshtrade",
@@ -77,43 +76,20 @@ function TS:Init()
     SeedKeywords(db)  -- crée + seed sell/buy/gift au besoin
 
     if not db.offers        then db.offers        = {} end
-    if not db.craftedItems  then db.craftedItems  = {} end
-    if not db.craftedNames  then db.craftedNames  = {} end
-    if not db.manualSellable then db.manualSellable = {} end
-    if not db.excludedItems  then db.excludedItems  = {} end
     if not db.doneOffers     then db.doneOffers     = {} end
-    if not db.guildRoster    then db.guildRoster    = {} end
-    if not db.craftOrders    then db.craftOrders    = {} end
-    if not db.knownRecipes   then db.knownRecipes   = {} end  -- [prof] = { [spellID]=true } (registre #1/#2/#9)
+    if not db.guildRoster    then db.guildRoster    = {} end  -- présence confédération (cf. Guild:IsConfederate)
     if not db.confedChannels then db.confedChannels = {} end  -- canaux "confédération seule" (#5)
     if db.alertSound == nil  then db.alertSound     = true end
     if db.scanGuild  == nil  then db.scanGuild      = true end
     if db.debugLog   == nil  then db.debugLog       = false end
     if db.bagSellEnabled == nil then db.bagSellEnabled = true end
     if db.useGreenWall   == nil then db.useGreenWall   = true end
-    if db.replaceProfWindow == nil then db.replaceProfWindow = true end  -- fenêtre métier mono-bloc
     if db.useGFM         == nil then db.useGFM          = true end  -- afficher les ventes GuildFoundMarket
 
-    self.db           = db
-    self.craftedItems = db.craftedItems
-    self.craftedNames = db.craftedNames
-
-    if self.LoadStaticData then self:LoadStaticData() end
-    if self.Registry then self.Registry:Init() end  -- catalogue CraftLink (après LoadStaticData)
-
-    -- Purge UNKNOWN entries from old Enchanting scan via wrong API
-    for id, prof in pairs(self.craftedItems) do
-        if prof == "UNKNOWN" then self.craftedItems[id] = nil end
-    end
-    for name, info in pairs(self.craftedNames) do
-        if type(info) == "table" and info.profession == "UNKNOWN" then
-            self.craftedNames[name] = nil
-        end
-    end
+    self.db = db
 
     ApplyKeywordMigrations(db)
 
-    self:PurgeOldOrders()  -- vide les commandes de craft dormantes (cf. doc §8)
     PurgeZeroItemOffers(db)  -- nettoie les offres "item:0" héritées (hotfix 1.5.1)
 
     if not db.errorLog then db.errorLog = {} end
@@ -126,14 +102,13 @@ end
 -- OFFER DATABASE (storage utilities)
 -- ============================================================
 
-function TS:GetOffers(filterType, craftOnly)
+function TS:GetOffers(filterType)
     local now, result = time(), {}
     for _, offer in ipairs(self.db.offers) do
         if (now - offer.timestamp) <= OFFER_EXPIRY then
-            local typeOk  = (filterType == nil or offer.offerType == filterType)
-            local craftOk = (not craftOnly) or offer.canCraft
-            local doneOk  = not (offer.itemID and self:IsDone(offer.player, offer.itemID))
-            if typeOk and craftOk and doneOk then table.insert(result, offer) end
+            local typeOk = (filterType == nil or offer.offerType == filterType)
+            local doneOk = not (offer.itemID and self:IsDone(offer.player, offer.itemID))
+            if typeOk and doneOk then table.insert(result, offer) end
         end
     end
     return result
@@ -262,7 +237,6 @@ end
 -- message reçu. Indispensable à l'échelle (guildes de 1000 → pics de logins).
 --   • La fenêtre d'offres n'est rebuild que si VISIBLE — UI:Refresh ne teste pas
 --     IsShown lui-même, donc sans ce garde elle se reconstruit fenêtre fermée.
---   • Les panneaux guilde (OrderPanel/ProfPanel) s'auto-gardent déjà par IsShown.
 local refreshPending = false
 function TS:RequestRefresh()
     local function doRefresh()
@@ -278,79 +252,11 @@ function TS:RequestRefresh()
     C_Timer.After(0.2, doRefresh)
 end
 
--- Purge les commandes de craft dormantes (auteur parti / jamais livrées). Sans ça,
--- db.craftOrders ne se vide jamais (contrairement aux offres, OFFER_EXPIRY) et la
--- liste tend vers le plafond MAX_OFFERS → resync HI maximale en permanence (doc §8).
--- La livraison CF en retire déjà, ceci rattrape les commandes abandonnées.
-function TS:PurgeOldOrders()
-    local orders = self.db and self.db.craftOrders
-    if not orders then return end
-    local now = time()
-    for i = #orders, 1, -1 do
-        if now - (orders[i].timestamp or 0) > ORDER_EXPIRY then
-            table.remove(orders, i)
-        end
-    end
-end
-
--- ============================================================
--- PROFESSION INTEGRATION
--- ============================================================
-
 -- Localised item name via WoW API. Falls back to label or "item:ID".
 function TS:GetItemName(itemID, fallback)
     if not itemID or itemID == 0 then return fallback end
     local name = GetItemInfo(itemID)
     return name or fallback or ("item:" .. itemID)
-end
-
--- Returns category, profession for an item the player can supply.
---   "manual"     = manually added via dropdown
---   "scan"       = recipe indexed from open profession window
---   "sellable"   = listed in a static profession DB
---   "disenchant" = disenchant mat listed in static DB
--- Returns nil if unknown or explicitly excluded.
-function TS:GetProducible(itemID)
-    if not itemID then return nil end
-    if self.db and self.db.excludedItems and self.db.excludedItems[itemID] then return nil end
-    if self.db and self.db.manualSellable and self.db.manualSellable[itemID] then
-        return "manual", "Manuel"
-    end
-    local scanned = self.craftedItems[itemID]
-    if scanned then return "scan", scanned end
-    local s = self.staticItems and self.staticItems[itemID]
-    if s then return s.category, s.profession end
-    return nil
-end
-
-function TS:CanSell(itemID)
-    return (self:GetProducible(itemID)) ~= nil
-end
-
--- Toggles exclusion of an item from scan results (ProfPanel filter button).
-function TS:ToggleExcluded(itemID)
-    if not itemID then return end
-    self.db.excludedItems = self.db.excludedItems or {}
-    if self.db.excludedItems[itemID] then
-        self.db.excludedItems[itemID] = nil
-    else
-        self.db.excludedItems[itemID] = true
-    end
-    self:RefreshCraftStatus()
-    return self.db.excludedItems[itemID] == true
-end
-
-function TS:AddManualSellable(itemID, name)
-    if not itemID then return end
-    self.db.manualSellable = self.db.manualSellable or {}
-    self.db.manualSellable[itemID] = name or self:GetItemName(itemID)
-    self:RefreshCraftStatus()
-end
-
-function TS:RemoveManualSellable(itemID)
-    if not itemID or not self.db.manualSellable then return end
-    self.db.manualSellable[itemID] = nil
-    self:RefreshCraftStatus()
 end
 
 -- Migration (Étape E) : prévient UNE fois (flag SV) que le système de commandes a déménagé vers
@@ -379,35 +285,7 @@ eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("CHAT_MSG_CHANNEL")
 eventFrame:RegisterEvent("CHAT_MSG_GUILD")
-eventFrame:RegisterEvent("TRADE_SKILL_SHOW")
-eventFrame:RegisterEvent("TRADE_SKILL_LIST_UPDATE")
-eventFrame:RegisterEvent("TRADE_SKILL_CLOSE")
-eventFrame:RegisterEvent("CRAFT_SHOW")
-eventFrame:RegisterEvent("CRAFT_UPDATE")
-eventFrame:RegisterEvent("CRAFT_CLOSE")
 eventFrame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
-
--- Debounced profession scan: avoids stacking C_Timer.After on UPDATE bursts.
-local scanPending = false
-local function HandleProfessionShow()
-    -- Affichage immédiat de la fenêtre mono-bloc : neutralise la frame native sans flash
-    -- et relit les recettes (l'API est dispo dès SHOW). Refresh interne coalescé.
-    if TS.ProfWindow then
-        local okw, errw = pcall(function() TS.ProfWindow:OnProfessionShow() end)
-        if not okw then print("|cFFFF4444TS profwin error:|r " .. tostring(errw)) end
-    end
-    -- Scan debouncé du métier (indexation craftedItems) + refresh une fois indexé.
-    if scanPending then return end
-    scanPending = true
-    C_Timer.After(0.3, function()
-        scanPending = false
-        local ok, err = pcall(function() TS:ScanOpenProfession() end)
-        if not ok then print("|cFFFF4444TS scan error:|r " .. tostring(err)) end
-        -- Capture des recettes connues au niveau RECETTE (spellID) → registre + diffusion RK.
-        if TS.Registry then pcall(function() TS.Registry:ScanOpen() end) end
-        if TS.ProfWindow then pcall(function() TS.ProfWindow:Refresh() end) end
-    end)
-end
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -419,7 +297,6 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         SlashCmdList["TRADESCANNER"] = function(msg) TS:HandleSlash(msg) end
         if TS.Minimap then TS.Minimap:Init() end
         if TS.Net     then TS.Net:Init()     end
-        if TS.Guild   then TS.Guild:Init()   end
         if TS.Trade   then TS.Trade:Init()   end
         if TS.BagSell then TS.BagSell:Init() end
         if TS.GFM     then TS.GFM:Init()     end
@@ -433,11 +310,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             end
             if _origErr then return _origErr(err) end
         end)
-        local cached = 0
-        for _ in pairs(TS.craftedItems or {}) do cached = cached + 1 end
-        local msg = "|cFF00CCFFGuild Economy|r loaded — /ts to open"
-        if cached > 0 then msg = msg .. string.format(" (%d recipes cached)", cached) end
-        print(msg)
+        print("|cFF00CCFFGuild Economy|r loaded — /ts to open")
         TS:ShowOrderMigrationNotice()   -- prévient une fois que les commandes ont migré (Étape E)
 
     elseif event == "CHAT_MSG_CHANNEL" then
@@ -454,13 +327,6 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             local playerShort = player:match("^([^%-]+)") or player
             TS:ParseMessage(msg, playerShort, "guild", "guild")
         end
-
-    elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_LIST_UPDATE"
-        or event == "CRAFT_SHOW" or event == "CRAFT_UPDATE" then
-        HandleProfessionShow()
-
-    elseif event == "TRADE_SKILL_CLOSE" or event == "CRAFT_CLOSE" then
-        if TS.ProfWindow then TS.ProfWindow:OnProfessionClose() end
 
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         -- Un objet d'offre réseau vient d'être résolu côté client → refresh pour

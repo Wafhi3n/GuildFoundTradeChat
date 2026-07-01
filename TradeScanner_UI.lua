@@ -24,7 +24,7 @@ local TABS = {
     { id = "wts",    label = "Sales (WTS)"  },
     { id = "buy",    label = "Wanted (WTB)" },
     { id = "gift",   label = "Gifts (WTG)"  },
-    { id = "sell",   label = "Sellable"     },
+    -- Onglet « Sellable » retiré (Étape F) : reposait sur le craft-social, désormais dans COC.
     -- Onglet « Orders » retiré (Étape E) : commandes migrées vers « Crafting Order - Classic ».
 }
 
@@ -257,7 +257,6 @@ function UI:SetTab(tabID)
     if self.offersPane then self.offersPane:SetShown(not isOrders) end
     if self.ordersPane then self.ordersPane:SetShown(isOrders) end
     if self.sidebar    then self.sidebar:SetShown(not isOrders) end
-    if tabID == "sell" and TS.Minimap then TS.Minimap:SetAlert(false) end
     self:Refresh()
 end
 
@@ -268,11 +267,10 @@ end
 function UI:_GetActiveOffers()
     local tab = self.activeTab or "all"
     local offers
-    if     tab == "all"  then offers = TS:GetOffers(nil,    false)
-    elseif tab == "wts"  then offers = TS:GetOffers("sell", false)
-    elseif tab == "buy"  then offers = TS:GetOffers("buy",  false)
-    elseif tab == "gift" then offers = TS:GetOffers("gift", false)
-    elseif tab == "sell" then offers = TS:GetSellableOffers()
+    if     tab == "all"  then offers = TS:GetOffers(nil)
+    elseif tab == "wts"  then offers = TS:GetOffers("sell")
+    elseif tab == "buy"  then offers = TS:GetOffers("buy")
+    elseif tab == "gift" then offers = TS:GetOffers("gift")
     end
     offers = offers or {}
     -- 0) Marché GuildFoundMarket : fusion des ventes live (bucket séparé, jamais persisté
@@ -348,37 +346,17 @@ function UI:_FillRow(row, offer)
     end
     row.playerFS:SetText(offer.player or "?")
     row.ageFS:SetText(FormatAge(offer.timestamp))
-    if offer.canCraft then
-        row.craftBar:Show()
-        if offer.sellCategory == "disenchant" then
-            row.craftBar:SetColorTexture(0.4, 0.8, 1, 1)
-            row.craftFS:SetText("|cFF66CCFFDE|r " .. (offer.profession or ""))
-        elseif offer.sellCategory == "manual" then
-            row.craftBar:SetColorTexture(0.6, 1, 0.6, 1)
-            row.craftFS:SetText("|cFF88FF88" .. (offer.profession or "Manuel") .. "|r")
-        else
-            row.craftBar:SetColorTexture(1, 0.78, 0, 1)
-            row.craftFS:SetText(offer.profession or "")
-        end
-    else
-        row.craftBar:Hide(); row.craftFS:SetText("")
-    end
     row.wBtn:Hide()
     row:Show()
 end
 
-function UI:_UpdateStatus(totalAll, totalSell, profCount)
-    if self.tabBtns and self.tabBtns["sell"] then
-        local btn = self.tabBtns["sell"]
-        if totalSell > 0 then btn.txt:SetText(string.format("|cFFFFCC00Sellable (%d)|r", totalSell))
-        else                  btn.txt:SetText(L["Sellable"]) end
-    end
+function UI:_UpdateStatus(totalAll)
     if self.statusText then
         local guildState = (TS.db and TS.db.scanGuild)
             and "|cFF33DD33/g ON|r" or "|cFFFF4444/g OFF|r"
         self.statusText:SetText(string.format(
-            "|cFFE8B84B%d|r offers  |  |cFFFFDD00%d WTB sellable|r  |  Channels: |cFF00CCFF%s|r  |  %s  |  |cFFE8B84B%d|r profession(s)",
-            totalAll, totalSell, TS:ChannelsLabel(), guildState, profCount))
+            "|cFFE8B84B%d|r offers  |  Channels: |cFF00CCFF%s|r  |  %s",
+            totalAll, TS:ChannelsLabel(), guildState))
     end
     if self.chanLabel and TS.db then
         self.chanLabel:SetText("Watching: |cFF00CCFF" .. TS:ChannelsLabel() .. "|r")
@@ -425,11 +403,8 @@ function UI:Refresh()
     local count = math.min(#offers, #self.rows)
     for i = 1, count do self:_FillRow(self.rows[i], offers[i]) end
     self:_UpdateEmptyState(#offers == 0)
-    local totalAll  = #TS:GetOffers(nil, false)
-    local totalSell = #TS:GetSellableOffers()
-    local profCount = 0
-    for _ in pairs(TS:GetCraftedProfessions()) do profCount = profCount + 1 end
-    self:_UpdateStatus(totalAll, totalSell, profCount)
+    local totalAll = #TS:GetOffers(nil)
+    self:_UpdateStatus(totalAll)
 end
 
 -- ============================================================

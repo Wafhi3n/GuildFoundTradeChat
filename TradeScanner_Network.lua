@@ -1,6 +1,6 @@
 -- TradeScanner_Network.lua
 -- Sync réseau inter-addon (guilde locale + GreenWall cross-serveur)
--- Protocoles: HI (hello), OF (offer), DN (done)
+-- Protocoles: HI (hello), WHO/IM (présence), OF (offer), DN (done)
 
 local TS  = TradeScanner
 local NET = {}
@@ -56,9 +56,7 @@ end
 -- Envoi à la confédération (guildes sœurs) via GreenWall.
 -- ⚠️ À n'appeler QUE dans la pile d'un hardware event (clic/touche joueur) :
 -- GreenWall relaie via SendChatMessage sur un canal, fonction protégée que le
--- client refuse d'exécuter hors hardware event (→ ADDON_ACTION_BLOCKED). C'est
--- pourquoi seules les actions de commande (CO/CC/CA, déclenchées par un bouton)
--- passent par ici ; les syncs auto (HI/OF/PR) restent en guilde locale.
+-- client refuse d'exécuter hors hardware event (→ ADDON_ACTION_BLOCKED).
 function NET:SendConfederation(payload)
     if not payload or payload == "" then return end
     if TS.db and TS.db.useGreenWall == false then return end
@@ -79,29 +77,20 @@ local function GetAddonVersion()
     return (f and f("TradeScanner", "Version")) or "?"
 end
 
--- Ping de présence "qui est en ligne ?" — déclenché par un clic (onglet Orders).
+-- Ping de présence "qui est en ligne ?" — déclenché par un clic (onglet/Refresh).
 -- Volontairement GUILDE-LOCALE : la réponse IM ne peut PAS traverser GreenWall
--- (émise depuis un handler réseau, hors hardware event). Un WHO confédéral ferait
--- donc répondre les 11 guildes sœurs dans LEUR propre canal, pour des IM que
--- l'émetteur ne reçoit jamais → amplification pure (cf. doc charge à l'échelle).
--- On garde WHO local comme HI. Throttlé pour éviter le spam.
+-- (émise depuis un handler réseau, hors hardware event). Throttlé pour éviter le spam.
 function NET:BroadcastWho()
     local now = GetTime()
     if self.lastWho and (now - self.lastWho) < 5 then return end
     self.lastWho = now
     self:Send("WHO")
-    -- BroadcastWho n'est appelé QUE sur clic (minimap, onglet, Refresh) = hardware
-    -- event → on en profite pour pousser MES métiers en CROSS-GUILDE. Indispensable :
-    -- les guildes sœurs ne reçoivent jamais nos réponses IM/PR automatiques (émises
-    -- hors hardware event) donc sans cette poussée proactive elles ignorent nos métiers.
-    self:BroadcastProfessions(nil, true)
 end
 
--- Réponse de présence : "IM|prof1,prof2|version". Émise depuis un handler
--- réseau (réception de WHO) → guilde locale uniquement (pas de hardware event).
+-- Réponse de présence : "IM|version". Émise depuis un handler réseau (réception
+-- de WHO) → guilde locale uniquement (pas de hardware event).
 function NET:BroadcastPresence()
-    local profs = (TS.Guild and TS.Guild.myProfessions) or {}
-    self:Send("IM|" .. table.concat(profs, ",") .. "|" .. GetAddonVersion())
+    self:Send("IM|" .. GetAddonVersion())
 end
 
 -- Envoie une offre unique
@@ -124,7 +113,7 @@ end
 
 -- Envoie toutes les offres actives staggered (réponse à HI)
 function NET:SendAllOffersDelayed()
-    local offers = TS:GetOffers(nil, false)  -- toutes offres non-expirées
+    local offers = TS:GetOffers(nil)  -- toutes offres non-expirées
     local sent = 0
 
     local ticker = C_Timer.NewTicker(OFFER_TICK, function(ticker)
@@ -144,91 +133,7 @@ function NET:BroadcastDone(player, itemID)
     self:Send(payload)
 end
 
--- ------------------------------------------------------------------
--- Guilde : métiers (PR) + commandes de craft (CO / CC / CA)
--- ------------------------------------------------------------------
-
--- Annonce mes métiers + version : "PR|prof1,prof2,...|version".
--- fromUser=true ⇒ appel dans la pile d'un hardware event ⇒ propagation cross-guilde
--- (GreenWall) en plus de la guilde locale. Voir BroadcastWho pour le déclencheur.
-function NET:BroadcastProfessions(professions, fromUser)
-    local list = professions or (TS.Guild and TS.Guild.myProfessions) or {}
-    local payload = "PR|" .. table.concat(list, ",") .. "|" .. GetAddonVersion()
-    self:Send(payload)
-    if fromUser then self:SendConfederation(payload) end
-end
-
--- Nouvelle commande : "CO|buyer|kind|id|qty|priceValue|priceText|profession|name"
---   kind = "I" (item, id=itemID) | "E" (enchant, id=spellID, name=libellé)
---   fromUser = déclenchée par un clic joueur → propageable cross-guilde (GreenWall).
-function NET:BroadcastOrder(o, fromUser)
-    if not o then return end
-    local kind = o.enchantID and "E" or "I"
-    local id   = o.enchantID or o.itemID
-    if not id then return end
-    local payload = string.format("CO|%s|%s|%d|%d|%d|%s|%s|%s",
-        o.buyer or "",
-        kind,
-        id,
-        o.qty or 1,
-        o.priceValue or 0,
-        (o.priceText or ""):gsub("|", ""),
-        o.profession or "",
-        (o.enchantName or ""):gsub("|", ""))
-    self:Send(payload)
-    if fromUser then self:SendConfederation(payload) end
-end
-
--- Annulation : "CC|buyer|kind|id" (toujours déclenchée par un clic → cross-guilde)
-function NET:BroadcastCancel(buyer, kind, id)
-    if not buyer or not id then return end
-    local payload = string.format("CC|%s|%s|%d", buyer, kind or "I", id)
-    self:Send(payload)
-    self:SendConfederation(payload)
-end
-
--- Acceptation : "CA|crafter|buyer|kind|id" (clic → cross-guilde)
-function NET:BroadcastAccept(crafter, buyer, kind, id)
-    if not crafter or not buyer or not id then return end
-    local payload = string.format("CA|%s|%s|%s|%d", crafter, buyer, kind or "I", id)
-    self:Send(payload)
-    self:SendConfederation(payload)
-end
-
--- Validation/livraison : "CF|buyer|kind|id|delivered" → décrémente la quantité ;
--- retirée partout quand il ne reste rien. `delivered` = quantité livrée (>=1).
--- localOnly = true ⇒ pas de relais GreenWall (appel hors hardware event, ex. trade auto).
-function NET:BroadcastFulfill(buyer, kind, id, delivered, localOnly)
-    if not buyer or not id then return end
-    local payload = string.format("CF|%s|%s|%d|%d", buyer, kind or "I", id, delivered or 0)
-    self:Send(payload)
-    if not localOnly then self:SendConfederation(payload) end
-end
-
--- Envoie MES commandes actives staggered (réponse à HI).
--- On ne rebroadcast QUE les commandes dont je suis l'auteur (o.buyer == moi),
--- comme BroadcastOffer ignore déjà les offres source=="network" : sinon chaque
--- membre réémettrait toute la liste confédérale (jusqu'à MAX_OFFERS) à CHAQUE
--- login de la guilde → tempête O(k×liste). Chaque auteur porte sa resync ;
--- une commande dont l'auteur est hors-ligne resync à son prochain login.
-function NET:SendAllOrdersDelayed()
-    local me   = UnitName("player") or "?"
-    local mine = {}
-    for _, o in ipairs((TS.db and TS.db.craftOrders) or {}) do
-        if o.buyer == me then mine[#mine + 1] = o end
-    end
-    local sent = 0
-    C_Timer.NewTicker(OFFER_TICK, function(ticker)
-        if sent >= #mine or sent >= MAX_OFFERS then
-            ticker:Cancel()
-            return
-        end
-        sent = sent + 1
-        if TS.Net then TS.Net:BroadcastOrder(mine[sent]) end
-    end, MAX_OFFERS)
-end
-
--- Réponse à un HELLO reçu : resync de MES offres/commandes + annonce de mes métiers.
+-- Réponse à un HELLO reçu : resync de MES offres.
 -- Deux protections d'échelle (cf. doc charge à l'échelle) :
 --   • Throttle : un seul HI honoré par fenêtre — si plusieurs membres se loguent
 --     en rafale, on ne relance pas N jeux de tickers de resync concurrents.
@@ -242,12 +147,6 @@ function NET:RespondToHello()
     self.lastHelloResp = now
     C_Timer.After(math.random() * HELLO_JITTER, function()
         NET:SendAllOffersDelayed()
-        NET:SendAllOrdersDelayed()
-        if TS.Guild then
-            if not TS.Guild.myProfessions then TS.Guild:DetectMyProfessions() end
-            NET:BroadcastProfessions(TS.Guild.myProfessions)
-        end
-        if TS.Registry then TS.Registry:BroadcastAll() end  -- registre de recettes (RK)
     end)
 end
 
@@ -273,8 +172,6 @@ function NET:_HandleOF(message)
     if not itemID or itemID == 0 then return end
     priceValue = tonumber(priceValue) or 0
     timestamp  = tonumber(timestamp) or time()
-    local cat, prof
-    if itemID then cat, prof = TS:GetProducible(itemID) end
     TS:AddOffer({
         offerType    = offerType, player = player, itemID = itemID,
         -- nil si l'objet n'est pas encore en cache (résolu à l'affichage) ; l'appel
@@ -282,7 +179,6 @@ function NET:_HandleOF(message)
         itemName     = (GetItemInfo(itemID)),
         itemLink     = nil, priceText = (priceText ~= "" and priceText) or nil,
         priceValue   = priceValue, rawMsg = nil, timestamp = timestamp,
-        canCraft     = cat ~= nil, sellCategory = cat, profession = prof,
         source       = "network",
     })
 end
@@ -291,35 +187,6 @@ function NET:_HandleDN(message)
     -- Match ancré : "DN|player|itemID" (l'ancien split prenait "DN" comme player).
     local player, itemID = message:match("^DN|([^|]+)|(%d+)")
     if player and itemID then TS:MarkDone(player, tonumber(itemID), true) end
-end
-
-function NET:_HandleCO(message)
-    local buyer, kind, id, qty, pv, ptext, prof, name =
-        message:match("^CO|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|(.*)$")
-    id = tonumber(id)
-    if not (TS.Guild and buyer and id) then return end
-    local o = {
-        buyer      = buyer, qty = tonumber(qty) or 1,
-        priceValue = tonumber(pv) or 0,
-        priceText  = (ptext ~= "" and ptext) or nil,
-        profession = (prof  ~= "" and prof)  or nil,
-        status     = "open", timestamp = time(),
-    }
-    if kind == "E" then
-        o.enchantID = id; o.enchantName = (name ~= "" and name) or nil
-    else
-        o.itemID = id
-    end
-    TS.Guild:AddOrder(o, true)
-end
-
-function NET:_HandleCF(message)
-    local buyer, kind, id, delivered = message:match("^CF|([^|]+)|([^|]+)|(%d+)|?(%d*)")
-    if TS.Guild and buyer and id then
-        delivered = tonumber(delivered)  -- nil/0 = livraison complète (compat)
-        if delivered == 0 then delivered = nil end
-        TS.Guild:FulfillOrder(buyer, (kind == "E" and "e" or "i") .. id, delivered, true)
-    end
 end
 
 function NET:HandleMessage(senderName, message)
@@ -334,37 +201,22 @@ function NET:HandleMessage(senderName, message)
         self:RespondToHello()
 
     elseif cmd == "WHO" then
-        -- Ping de présence : je réponds qui je suis (métiers + version).
+        -- Ping de présence : je réponds qui je suis (version).
         self:BroadcastPresence()
 
     elseif cmd == "IM" then
-        -- "IM|prof1,prof2|version" — réponse de présence d'un membre.
+        -- "IM|version" — réponse de présence d'un membre.
         if TS.Guild then
-            local body, ver = message:match("^IM|([^|]*)|?(.*)$")
-            local profs = {}
-            for p in (body or ""):gmatch("([^,]+)") do profs[#profs + 1] = p end
-            TS.Guild:UpdateRoster(playerShort, profs, ver ~= "" and ver or nil)
+            local ver = message:match("^IM|(.*)$")
+            TS.Guild:MarkSeen(playerShort, ver ~= "" and ver or nil)
         end
 
     elseif cmd == "OF" then self:_HandleOF(message)
     elseif cmd == "DN" then self:_HandleDN(message)
 
-    elseif cmd == "PR" then
-        if TS.Guild then
-            -- "PR|profs|version" (version optionnelle : compat anciens clients "PR|profs").
-            local body, ver = message:match("^PR|([^|]*)|?(.*)$")
-            local profs = {}
-            for p in (body or ""):gmatch("([^,]+)") do profs[#profs + 1] = p end
-            TS.Guild:UpdateRoster(playerShort, profs, ver ~= "" and ver or nil)
-        end
-
-    elseif cmd == "RK" then
-        -- Registre de recettes : Registry possède le format de fil (build + parse).
-        if TS.Registry then TS.Registry:OnNetwork(playerShort, message) end
-
-    -- Verbes d'ordres CO/CC/CA/CF DÉCOMMISSIONNÉS (Étape E) : le système de commandes vit désormais
-    -- dans l'addon « Crafting Order - Classic ». GE n'émet plus et n'agit plus sur ces messages.
-    -- (Handlers _HandleCO/_HandleCF/CancelOrder/AcceptOrder conservés en dead code.)
+    -- Verbes de métiers (PR/RK) et de commandes de craft (CO/CC/CA/CF) DÉCOMMISSIONNÉS
+    -- (Étape F) : le craft-social vit désormais entièrement dans « Crafting Order - Classic ».
+    -- GE n'émet plus et n'agit plus sur ces messages.
     end
 end
 
@@ -415,7 +267,7 @@ end
 
 -- Enregistre les deux greffes GreenWall dès que disponibles (retry ~1 min) :
 --   (1) le CHAT des co-guildes — pour PARSER les offres WTS/WTB des guildes sœurs ;
---   (2) le PROTOCOLE addon (CO/OF/…) via GreenWallAPI.
+--   (2) le PROTOCOLE addon (OF/DN/…) via GreenWallAPI.
 function NET:RegisterGreenWall(attempt)
     attempt = attempt or 1
     self:_HookGreenWallChat()
